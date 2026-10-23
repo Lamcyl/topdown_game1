@@ -1,0 +1,12 @@
+# Godot
+.godot/
+*.import
+export/
+*.apk
+*.aab
+
+# Web / Capacitor
+node_modules/
+dist/
+benchmark/web/android/
+benchmark/web/ios/

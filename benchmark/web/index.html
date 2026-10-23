@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Benchmark (Web)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #9fc6e0; font: 16px system-ui, sans-serif; color: #eee; }
+      canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+      [hidden] { display: none !important; }
+      #hud { position: fixed; top: 12px; left: 16px; white-space: pre; font-size: 18px; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
+      #stop { position: fixed; top: 12px; right: 16px; }
+      .center { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
+      .panel { pointer-events: auto; background: rgba(30, 32, 40, 0.92); border-radius: 8px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; max-width: min(92vw, 720px); }
+      .panel h1 { margin: 0; font-size: 22px; }
+      .small { font-size: 13px; opacity: 0.8; }
+      .opts { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+      #presets { display: flex; flex-direction: column; gap: 8px; }
+      button, select { font: inherit; padding: 8px 12px; border-radius: 6px; border: 1px solid #555; background: #3a3d4a; color: #eee; }
+      #result-text { white-space: pre-wrap; margin: 0; font: 15px ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <button id="stop" hidden>Stop</button>
+
+    <div class="center">
+      <div class="panel" id="menu">
+        <h1>Web (three.js) benchmark</h1>
+        <div class="small" id="device"></div>
+        <div class="opts">
+          <label><input type="checkbox" id="shadows" checked /> Shadows</label>
+          <label><input type="checkbox" id="bloom" checked /> Bloom</label>
+          <select id="cap"><option value="60">60 fps cap</option><option value="120">120 fps cap</option></select>
+          <select id="scale"><option value="1">Scale 100%</option><option value="0.75">Scale 75%</option><option value="0.5">Scale 50%</option></select>
+        </div>
+        <div id="presets"></div>
+        <div class="small">Results print to the console (chrome://inspect). Use tools/android_thermal_log.sh for heat.</div>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="panel" id="result" hidden>
+        <pre id="result-text"></pre>
+        <div class="opts"><button id="copy">Copy JSON</button><button id="back">Back to menu</button></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
