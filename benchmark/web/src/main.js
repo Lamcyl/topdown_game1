@@ -220,7 +220,14 @@ function finish() {
     /* storage can be blocked; the console and copy button still have it */
   }
   ui.resultText.textContent = resultText(result);
-  ui.copy.onclick = () => navigator.clipboard?.writeText(JSON.stringify(result, null, 2));
+  ui.copy.onclick = () => {
+    const text = JSON.stringify(result, null, 2);
+    const selectInstead = () => {
+      ui.resultText.textContent = text;
+      getSelection().selectAllChildren(ui.resultText);
+    };
+    navigator.clipboard?.writeText(text).then(() => (ui.copy.textContent = 'Copied'), selectInstead) ?? selectInstead();
+  };
   ui.stop.hidden = true;
   ui.result.hidden = false;
   wakeLock?.release();
@@ -293,6 +300,7 @@ ui.stop.addEventListener('click', finish);
 ui.back.addEventListener('click', () => {
   ui.result.hidden = true;
   ui.menu.hidden = false;
+  ui.copy.textContent = 'Copy JSON';
   world.setUnitCount(MENU_UNITS);
 });
 
