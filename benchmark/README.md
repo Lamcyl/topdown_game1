@@ -47,6 +47,22 @@ Each run skips 3 s of warm-up, then reports average fps, 1% low fps, p99 frame t
    - Turn on USB debugging on the phone, then click the **Remote Deploy** (Android) button in the top-right of the editor. It builds, installs and runs in one click.
 4. **iOS:** Project → Export → iOS produces an Xcode project. This requires a Mac.
 
+**Building a sideloadable APK without Android Studio.** `export_presets.cfg` uses Godot's prebuilt Android template (no Gradle, arm64 only), so a build only needs:
+- the Godot Android export templates
+- `apksigner`, for example from Ubuntu's `apksigner` package
+- a JDK for `keytool`
+
+Point Editor Settings → Export → Android → Android SDK Path at a folder holding `build-tools/<version>/apksigner` and `platform-tools/adb`. Then run:
+
+```bash
+keytool -genkeypair -keystore bench.keystore -alias bench -keyalg RSA -validity 10000 -dname CN=Benchmark
+GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/bench.keystore GODOT_ANDROID_KEYSTORE_RELEASE_USER=bench \
+GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=<password> \
+  godot --headless --path benchmark/godot --export-release Android benchmark-godot.apk
+```
+
+Install it by opening the APK on the phone and allowing installs from that app when Android asks.
+
 ## Running the web build
 
 ```bash

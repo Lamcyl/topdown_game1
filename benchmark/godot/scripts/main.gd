@@ -44,6 +44,8 @@ var _hud: Label
 var _stop_btn: Button
 var _result: Control
 var _result_label: Label
+var _copy_btn: Button
+var _last_json := ""
 var _shadows: CheckButton
 var _bloom: CheckButton
 var _cap: OptionButton
@@ -202,6 +204,8 @@ func _finish() -> void:
 	if f:
 		f.store_string(JSON.stringify(result, "  "))
 		path = ProjectSettings.globalize_path(path)
+	_last_json = JSON.stringify(result, "  ")
+	_copy_btn.text = "Copy JSON"
 	_result_label.text = _result_text(result) + "\n\nSaved: " + path
 	_stop_btn.visible = false
 	_result.visible = true
@@ -308,17 +312,28 @@ func _build_ui() -> void:
 		b.text = p.label
 		b.pressed.connect(_start.bind(p))
 		box.add_child(b)
-	box.add_child(_label("Results print to logcat and save as JSON. Use tools/android_thermal_log.sh for heat.", 14))
+	box.add_child(_label("When a run ends, tap Copy JSON to save or share the results.\nKeep the phone unplugged and the screen on.", 14))
 
 	var rbox := _panel(root)
 	_result = rbox.get_parent().get_parent()
 	_result.visible = false
 	_result_label = _label("")
 	rbox.add_child(_result_label)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 12)
+	rbox.add_child(buttons)
+	_copy_btn = Button.new()
+	_copy_btn.pressed.connect(_copy_result)
+	buttons.add_child(_copy_btn)
 	var back := Button.new()
 	back.text = "Back to menu"
 	back.pressed.connect(_back_to_menu)
-	rbox.add_child(back)
+	buttons.add_child(back)
+
+
+func _copy_result() -> void:
+	DisplayServer.clipboard_set(_last_json)
+	_copy_btn.text = "Copied"
 
 
 func _back_to_menu() -> void:
