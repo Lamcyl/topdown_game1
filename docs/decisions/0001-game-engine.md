@@ -95,4 +95,5 @@ The same scene was built in both engines: [`benchmark/`](../../benchmark/README.
 - **Many identical objects:** draw units, trees and projectiles with `MultiMesh` instancing.
 - **Monetization:** add it late, behind the in-house interface described above.
 - **Builds:** Android builds work without Android Studio (see `benchmark/README.md`). iOS builds will need a Mac.
+- **Web build (planned, when asked):** a browser version for sharing test links will come from Godot's Web export of the same project, not a separate port. It uses the Compatibility renderer, so keep the art within what that renderer can show, and stay on GDScript.
 - **Benchmark:** keep `benchmark/` in the repo, so the game's heavier scenes can be compared against these baselines.
