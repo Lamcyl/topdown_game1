@@ -1,0 +1,962 @@
+<title>Grid Gameplay Demos</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* Layout: one phone-width column — tabs, stats strip, message, square board, satchel, actions. Single dark "candlelit grimoire" look. */
+  :root {
+    --bg: #15131c;          /* night ink */
+    --panel: #201d2a;       /* worn vellum in shadow */
+    --line: #3a3549;
+    --fg: #ece6d6;          /* parchment */
+    --muted: #a59fb3;
+    --gold: #e0b55c;        /* candle gold accent */
+    --good: #6fcf8a;        /* your side, growth */
+    --bad: #e0627a;         /* danger, damage */
+    --rot: #9b6bd6;         /* corruption, hexes */
+    --cell: #2a2636;
+    --cell-alt: #2f2a3d;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.45 var(--body); }
+  .wrap {
+    max-width: 560px; margin: 0 auto;
+    padding-block: 12px 32px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  h1 { font: 700 20px/1.2 var(--display); letter-spacing: 0.04em; margin: 0; text-wrap: balance; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tab {
+    font: 600 12px/1.2 var(--display); letter-spacing: 0.03em; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 4px; cursor: pointer;
+  }
+  .tab[aria-selected="true"] { color: var(--bg); background: var(--gold); border-color: var(--gold); }
+  .game { display: flex; flex-direction: column; gap: 10px; }
+  .game h2 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: 0.03em; }
+  .tagline { margin: 0; color: var(--muted); font-size: 13px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stat b { font-weight: 600; }
+  .stat.good b { color: var(--good); } .stat.bad b { color: var(--bad); } .stat.gold b { color: var(--gold); } .stat.rot b { color: var(--rot); }
+  .msg { margin: 0; min-height: 2.9em; padding: 8px 10px; background: var(--panel); border-left: 3px solid var(--gold); border-radius: 4px; font-size: 14px; }
+  .result { padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+  .result.win { border-color: var(--good); } .result.lose { border-color: var(--bad); }
+  .result strong { font: 700 16px var(--display); }
+  .board { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 3px; width: 100%; max-width: 100%; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .cell {
+    position: relative; aspect-ratio: 1; max-width: 100%; border: 0; border-radius: 5px; padding: 0; cursor: pointer;
+    background: var(--cell); color: var(--fg); font-size: clamp(16px, 5.4vw, 26px); line-height: 1;
+    display: grid; place-items: center; transition: transform .12s, box-shadow .12s;
+  }
+  .cell:nth-child(odd) { background: var(--cell-alt); }
+  .cell:focus-visible, .tab:focus-visible, .btn:focus-visible, .item:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .cell .badge { position: absolute; right: 2px; bottom: 1px; font: 600 10px/1 var(--body); color: var(--fg); background: rgba(0,0,0,.55); border-radius: 4px; padding: 1px 3px; }
+  .cell .badge.l { left: 2px; right: auto; }
+  .cell .badge.top { top: 1px; bottom: auto; }
+  .cell .badge.bad { color: #fff; background: var(--bad); }
+  .cell .badge.good { color: #10140f; background: var(--good); }
+  .cell .badge.gold { color: #1a1408; background: var(--gold); }
+  .cell.target { box-shadow: inset 0 0 0 2px var(--gold); }
+  .cell.attack { box-shadow: inset 0 0 0 2px var(--bad); }
+  .cell.sel { box-shadow: inset 0 0 0 3px var(--gold); }
+  .cell.flash { animation: flash .45s ease-out; }
+  .cell.lit { transform: scale(1.08); box-shadow: 0 0 0 2px var(--gold), 0 0 14px var(--gold); z-index: 1; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px #fff, 0 0 18px var(--gold); } to { box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .cell { transition: none; } .cell.flash { animation: none; } }
+  /* terrain / ownership */
+  .t-wall { background: #0d0c12 !important; cursor: default; }
+  .t-chasm { background: #050408 !important; box-shadow: inset 0 0 10px #000; }
+  .t-water { background: #1d3f63 !important; }
+  .t-ice { background: #8fc4dd !important; }
+  .t-bridge { background: #6b4b2c !important; }
+  .t-crack { background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.35) 6px 8px) !important; }
+  .t-stairs { background: #4b3f1f !important; }
+  .o-you { background: #2f5a3a !important; }
+  .o-rot { background: #4a2d6b !important; }
+  .o-stone { background: #555060 !important; }
+  .o-prot { box-shadow: inset 0 0 0 2px var(--gold); }
+  .plan { outline: 2px dashed var(--rot); outline-offset: -4px; }
+  .hex { background: #3a2252 !important; box-shadow: inset 0 0 0 2px var(--rot); }
+  .ally { text-shadow: 0 0 6px var(--good); }
+  .enemy { text-shadow: 0 0 6px var(--bad); }
+  .satchel { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+  .satchel h3 { grid-column: 1 / -1; margin: 2px 0 0; font: 600 12px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .item {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 5px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); cursor: pointer; font-size: 11px; min-width: 0;
+  }
+  .item .ic { font-size: 22px; line-height: 1.1; }
+  .item .nm { text-align: center; overflow-wrap: anywhere; }
+  .item .ct { position: absolute; top: 3px; right: 5px; font: 600 11px var(--body); color: var(--gold); }
+  .item .anc { position: absolute; top: 3px; left: 5px; font-size: 11px; }
+  .item[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); background: #2c2636; }
+  .item:disabled { opacity: .4; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn { font: 600 14px var(--body); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  .btn.primary { background: var(--gold); color: #1a1408; border-color: var(--gold); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  details.help { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  details.help summary { cursor: pointer; font-weight: 600; }
+  details.help ul { margin: 8px 0 4px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; max-width: 65ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Grid Gameplay Demos</h1>
+    <p class="sub">Four mid-game fights with placeholder art. Everything in your satchel was found this run and is used up when you use it. Items marked ⚓ were carried over from an earlier loop.</p>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Demos">
+    <button class="tab" role="tab" id="tab-ritual" data-game="ritual">Ritual Circle</button>
+    <button class="tab" role="tab" id="tab-glade" data-game="glade">Wildgrowth</button>
+    <button class="tab" role="tab" id="tab-chess" data-game="chess">Wizard Chess</button>
+    <button class="tab" role="tab" id="tab-delve" data-game="delve">Delve</button>
+  </nav>
+  <section class="game" id="game-ritual" role="tabpanel" aria-labelledby="tab-ritual"></section>
+  <section class="game" id="game-glade" role="tabpanel" aria-labelledby="tab-glade" hidden></section>
+  <section class="game" id="game-chess" role="tabpanel" aria-labelledby="tab-chess" hidden></section>
+  <section class="game" id="game-delve" role="tabpanel" aria-labelledby="tab-delve" hidden></section>
+</div>
+
+<script>
+// ---------------------------------------------------------------- shared helpers
+const DIR4 = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const DIR8 = [...DIR4, [-1, -1], [-1, 1], [1, -1], [1, 1]];
+const rand = (n) => Math.floor(Math.random() * n);
+const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const rep = (x, n) => Array(n).fill(x);
+const cheb = (a, b) => Math.max(Math.abs(a.r - b.r), Math.abs(a.c - b.c));
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === false || v == null) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return e;
+}
+const stat = (label, value, tone = '') => el('span', { class: 'stat ' + tone }, label + ' ', el('b', {}, String(value)));
+const btn = (label, onclick, opts = {}) => el('button', { class: 'btn' + (opts.primary ? ' primary' : ''), onclick, disabled: opts.disabled }, label);
+
+function boardEl(rows, cols, cellFn, onTap) {
+  const b = el('div', { class: 'board', style: `--cols:${cols}` });
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const s = cellFn(r, c);
+    const cell = el('button', { class: 'cell ' + (s.cls || ''), 'aria-label': s.label || `row ${r + 1}, column ${c + 1}`, onclick: () => onTap(r, c) });
+    cell.innerHTML = s.html || '';
+    b.append(cell);
+  }
+  return b;
+}
+function itemBtn({ icon, name, count, selected, anchored, disabled, onclick }) {
+  return el('button', { class: 'item', 'aria-pressed': selected ? 'true' : 'false', disabled, onclick },
+    anchored ? el('span', { class: 'anc', title: 'Carried over from an earlier loop' }, '⚓') : null,
+    count != null ? el('span', { class: 'ct' }, '×' + count) : null,
+    el('span', { class: 'ic' }, icon), el('span', { class: 'nm' }, name));
+}
+function resultCard(res, onRestart) {
+  return el('div', { class: 'result ' + res.kind }, el('strong', {}, res.title), el('span', {}, res.text),
+    el('div', { class: 'actions' }, btn('Play again', onRestart, { primary: true })));
+}
+function help(lines) {
+  return el('details', { class: 'help' }, el('summary', {}, 'How to play'), el('ul', {}, lines.map((l) => el('li', { html: l }))));
+}
+
+// ================================================================ 3. RITUAL CIRCLE
+const RP = {
+  candle:   { name: 'Candle', icon: '🕯️', base: 2, info: 'Power 2. Every other piece in its row gets +2.' },
+  ember:    { name: 'Ember', icon: '🔥', base: 4, info: 'Power 4. The 4 pieces touching it get +3.' },
+  crystal:  { name: 'Crystal', icon: '💎', base: 1, charges: 2, info: 'Power 1. Doubles each of the 4 pieces touching it. Survives 2 ignitions.' },
+  familiar: { name: 'Familiar', icon: '🐈‍⬛', base: 3, charges: 3, info: 'Power 3, +1 for every piece in the 8 tiles around it. Survives 3 ignitions.' },
+  mirror:   { name: 'Mirror', icon: '🪞', base: 0, info: 'Becomes a copy of the piece on its left, including what that piece does.' },
+  blood:    { name: 'Blood Sigil', icon: '🩸', base: 0, info: 'Doubles the whole total. Costs you 3 HP when you ignite.' },
+  salt:     { name: 'Salt Ward', icon: '🧂', base: 0, info: 'Blocks 6 of the demon’s damage this round.' },
+};
+const Ritual = {
+  key: 'ritual',
+  reset() {
+    const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ p: null, hex: false })));
+    grid[2][2].p = { t: 'familiar', charges: 3, anchored: true };
+    const bag = shuffle([...rep('candle', 6), ...rep('ember', 4), ...rep('crystal', 4), ...rep('mirror', 3), ...rep('blood', 2), ...rep('salt', 2), 'familiar']);
+    this.s = { grid, bag, hand: [], sel: null, hp: 24, maxHp: 24, demon: 170, demonMax: 170, intents: [4, 6, 8, 10], round: 0, maxRounds: 4,
+      busy: false, result: null, lit: null, running: null,
+      msg: 'The Hollow Bishop waits at the edge of the circle. Place pieces, watch the power add up, then Ignite. Your anchored Familiar is already in the centre.' };
+    this.draw(6); this.hexTiles();
+  },
+  draw(n) { const s = this.s; while (n-- > 0 && s.bag.length && s.hand.length < 8) s.hand.push(s.bag.pop()); },
+  hexTiles() {
+    const s = this.s; for (const row of s.grid) for (const x of row) x.hex = false;
+    const cells = shuffle([...Array(25).keys()]).slice(0, 3);
+    for (const i of cells) s.grid[Math.floor(i / 5)][i % 5].hex = true;
+  },
+  score() {
+    const g = this.s.grid, eff = g.map((row) => row.map(() => null));
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+      const x = g[r][c]; if (!x.p || x.hex) continue;
+      eff[r][c] = x.p.t === 'mirror' ? (c > 0 ? eff[r][c - 1] : null) : x.p.t;
+    }
+    const at = (r, c) => (r >= 0 && r < 5 && c >= 0 && c < 5 ? eff[r][c] : null);
+    const val = g.map((row) => row.map(() => 0));
+    let sum = 0, blood = 0, salt = 0;
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+      const t = eff[r][c]; if (!t) continue;
+      if (t === 'blood') { blood++; continue; }
+      if (t === 'salt') { salt++; continue; }
+      let v = RP[t].base;
+      for (let c2 = 0; c2 < 5; c2++) if (c2 !== c && eff[r][c2] === 'candle') v += 2;
+      for (const [dr, dc] of DIR4) if (at(r + dr, c + dc) === 'ember') v += 3;
+      if (t === 'familiar') for (const [dr, dc] of DIR8) if (at(r + dr, c + dc)) v += 1;
+      let mult = 1; for (const [dr, dc] of DIR4) if (at(r + dr, c + dc) === 'crystal') mult *= 2;
+      v *= mult; val[r][c] = v; sum += v;
+    }
+    return { eff, val, sum, blood, salt, total: sum * 2 ** blood };
+  },
+  tap(r, c) {
+    const s = this.s; if (s.busy || s.result) return;
+    const x = s.grid[r][c];
+    if (x.p && x.p.fresh) { s.hand.push(x.p.t); x.p = null; s.msg = 'Piece returned to your hand.'; return this.render(); }
+    if (s.sel == null) { s.msg = x.p ? RP[x.p.t].info : 'Pick a piece from your hand first, then tap an empty tile.'; return this.render(); }
+    if (x.p) { s.msg = 'That tile is taken. Tap one of your newly placed pieces to take it back.'; return this.render(); }
+    const t = s.hand.splice(s.sel, 1)[0];
+    x.p = { t, fresh: true, charges: RP[t].charges };
+    s.sel = null; s.msg = x.hex ? `${RP[t].name} placed on a hexed tile. It does nothing while the hex lasts.` : `${RP[t].name} placed.`;
+    this.render();
+  },
+  async ignite() {
+    const s = this.s; if (s.busy || s.result) return;
+    const sc = this.score();
+    if (sc.blood * 3 >= s.hp) { s.msg = `The Blood Sigils would cost ${sc.blood * 3} HP and kill you. Take one back first.`; return this.render(); }
+    s.busy = true; s.sel = null; s.running = 0;
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+      if (!sc.val[r][c]) continue;
+      s.lit = [r, c]; s.running += sc.val[r][c]; s.msg = `Power ${s.running}`; this.render(); await wait(170);
+    }
+    s.lit = null;
+    if (sc.blood) { s.running = sc.total; s.msg = `Blood Sigils ×${2 ** sc.blood}: power ${sc.total}!`; this.render(); await wait(450); }
+    s.hp -= sc.blood * 3;
+    s.demon = Math.max(0, s.demon - sc.total);
+    let log = `The ritual hits for ${sc.total}.`;
+    if (s.demon <= 0) { s.busy = false; s.result = { kind: 'win', title: 'The Hollow Bishop is banished', text: `Won with ${s.maxRounds - s.round - 1} ignitions left and ${s.hp} HP. Unused pieces stay in your bag for the next fight.` }; s.running = null; return this.render(); }
+    const dmg = Math.max(0, s.intents[s.round] - 6 * sc.salt);
+    s.hp -= dmg; log += ` The demon strikes back for ${dmg}${sc.salt ? ' (salt blocked some)' : ''}.`;
+    for (const row of s.grid) for (const x of row) {
+      if (!x.p) continue;
+      x.p.fresh = false;
+      if (x.p.charges && x.p.t !== 'mirror') { x.p.charges--; if (x.p.charges <= 0) x.p = null; } else x.p = null;
+    }
+    s.round++; s.running = null; s.busy = false;
+    if (s.hp <= 0) s.result = { kind: 'lose', title: 'You were consumed', text: 'The demon’s blows wore you down. In the campaign the loop would reset here.' };
+    else if (s.round >= s.maxRounds) s.result = { kind: 'lose', title: 'The hourglass ran out', text: `The Bishop survived with ${s.demon} HP. The loop resets to dusk.` };
+    else { this.hexTiles(); this.draw(4); log += ' New hexes appear. You draw 4 pieces.'; }
+    s.msg = log; this.render();
+  },
+  render() {
+    const s = this.s, root = this.root, sc = this.score();
+    const intent = s.round < s.maxRounds ? s.intents[s.round] : 0;
+    const blocked = Math.min(intent, sc.salt * 6);
+    const b = boardEl(5, 5, (r, c) => {
+      const x = s.grid[r][c], v = sc.val[r][c];
+      let html = x.p ? RP[x.p.t].icon : '';
+      if (x.p && x.p.t === 'mirror' && sc.eff[r][c]) html = '🪞' + `<span class="badge l top">${RP[sc.eff[r][c]].icon}</span>`;
+      if (x.p && v) html += `<span class="badge gold">${v}</span>`;
+      if (x.p && x.p.charges && RP[x.p.t].charges) html += `<span class="badge l">${x.p.charges}⟳</span>`;
+      if (x.p && x.p.anchored) html += `<span class="badge l top">⚓</span>`;
+      let cls = x.hex ? 'hex' : '';
+      if (s.lit && s.lit[0] === r && s.lit[1] === c) cls += ' lit';
+      else if (s.sel != null && !x.p) cls += ' target';
+      return { cls, html, label: x.p ? RP[x.p.t].name : (x.hex ? 'hexed tile' : 'empty tile') };
+    }, (r, c) => this.tap(r, c));
+    const hand = el('div', { class: 'satchel' }, el('h3', {}, `Hand (${s.hand.length}) · bag ${s.bag.length} left`),
+      s.hand.map((t, i) => itemBtn({ icon: RP[t].icon, name: RP[t].name, selected: s.sel === i, disabled: s.busy || !!s.result,
+        onclick: () => { s.sel = s.sel === i ? null : i; s.msg = RP[t].info; this.render(); } })));
+    root.replaceChildren(
+      el('h2', {}, 'Ritual Circle'),
+      el('p', { class: 'tagline' }, 'Fight 5 of 8 · Lay ritual pieces, then ignite them. Each piece powers its neighbours, and the total hits the demon.'),
+      el('div', { class: 'stats' },
+        stat('Bishop', `${s.demon}/${s.demonMax}`, 'bad'), stat('You', `${s.hp}/${s.maxHp} HP`, 'good'),
+        stat('Ignitions left', s.maxRounds - s.round, 'gold'),
+        stat('Power now', s.running != null ? s.running : (sc.blood ? `${sc.sum}×${2 ** sc.blood}=${sc.total}` : sc.total), 'gold'),
+        stat('Next hit', blocked ? `${intent}−${blocked}` : intent, 'bad')),
+      s.result ? resultCard(s.result, () => { this.reset(); this.render(); }) : el('p', { class: 'msg', 'aria-live': 'polite' }, s.msg),
+      b, el('div', { class: 'legend' }, el('span', {}, '🟪 hexed: pieces there do nothing'), el('span', {}, 'gold number: what the piece adds'), el('span', {}, '⟳ ignitions it survives')),
+      hand,
+      el('div', { class: 'actions' }, btn('Ignite', () => this.ignite(), { primary: true, disabled: s.busy || !!s.result }),
+        btn('Restart fight', () => { this.reset(); this.render(); }, { disabled: s.busy })),
+      help([
+        'Tap a piece in your hand, then an empty tile. Tap a piece you placed this round to take it back.',
+        'The numbers update as you place, so you can try layouts before you ignite.',
+        '<b>Ignite</b> scores every piece, damages the demon, then most pieces burn away. Crystals and Familiars survive a few ignitions.',
+        'The demon hits back after each ignition and hexes 3 new tiles. Hexed pieces score nothing.',
+        'Your bag holds only what you found this run, so every piece you burn is gone for good.',
+        'Combos to try: Candles sharing a row, a Crystal between two Embers, a Mirror to the right of a Blood Sigil.',
+      ]));
+  },
+};
+
+// ================================================================ 4. WILDGROWTH
+const GI = {
+  tend:    { name: 'Tend', icon: '🌱', info: 'Free once per turn. Claim one neutral tile next to your land.' },
+  bramble: { name: 'Bramble Seed', icon: '🌿', info: 'Plant on or next to your land. Grows 2 tiles in each straight direction, over neutral and rot.' },
+  moon:    { name: 'Moonflower', icon: '🌸', info: 'Plant on your land. Claims all 8 tiles around it.' },
+  stone:   { name: 'Standing Stone', icon: '🪨', info: 'Raise on any empty tile. It blocks rot and counts as a wall when you enclose.' },
+  ember:   { name: 'Wildfire Ember', icon: '🔥', info: 'Burns a 3×3 area to ash, your land too. Wisps caught in it are destroyed.' },
+  lantern: { name: 'Spirit Lantern', icon: '🏮', info: 'Your tiles in a 3×3 area can’t be taken for 3 turns.' },
+  snare:   { name: 'Root Snare', icon: '🪢', info: 'Pins one wisp in place for 2 turns.', anchored: true },
+};
+const GLADE_MAP = [
+  '...#RRRR',
+  '....RwHR',
+  '.#...RRw',
+  'Y..w..R.',
+  'YY...#..',
+  'YYY..w..',
+  'YGY...#.',
+  'YYYY....',
+];
+const Glade = {
+  key: 'glade', N: 8,
+  reset() {
+    const cells = GLADE_MAP.map((row) => [...row].map((ch) => ({
+      own: ch === 'Y' || ch === 'G' ? 'you' : ch === 'R' || ch === 'H' || ch === 'w' ? 'rot' : 'none',
+      stone: ch === '#', heart: ch === 'H', grove: ch === 'G', prot: 0,
+    })));
+    const wisps = []; GLADE_MAP.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === 'w') wisps.push({ r, c, stun: 0 }); }));
+    this.s = { cells, wisps, items: { bramble: 3, moon: 2, stone: 3, ember: 2, lantern: 1, snare: 1 }, sel: null, used: 0, tended: false,
+      turn: 1, maxTurns: 12, banished: 0, goal: 6, plan: [], flash: new Set(), result: null, busy: false,
+      msg: 'The rot is creeping toward your Grove 🌳. Surround wisps with your land (or stones) to cut them off from the Heart 🖤 and banish them. Banish 6 before the hourglass runs out.' };
+    this.makePlan();
+  },
+  c(r, c) { return this.s.cells[r][c]; },
+  inB(r, c) { return r >= 0 && r < this.N && c >= 0 && c < this.N; },
+  wispAt(r, c) { return this.s.wisps.find((w) => w.r === r && w.c === c); },
+  adjYou(r, c) { return DIR4.some(([dr, dc]) => this.inB(r + dr, c + dc) && this.c(r + dr, c + dc).own === 'you'); },
+  canTake(x) { return !x.stone && !x.heart && x.own !== 'rot' && !(x.own === 'you' && x.prot > 0); },
+  rotAdj(r, c) { return DIR4.some(([dr, dc]) => this.inB(r + dr, c + dc) && this.c(r + dr, c + dc).own === 'rot'); },
+  makePlan() {
+    const s = this.s, front = [];
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (this.canTake(this.c(r, c)) && this.rotAdj(r, c)) front.push([r, c]);
+    s.plan = shuffle(front).slice(0, 2 + Math.floor((s.turn - 1) / 3));
+  },
+  valid(key, r, c) {
+    const x = this.c(r, c), s = this.s;
+    switch (key) {
+      case 'tend': return !s.tended && x.own === 'none' && !x.stone && this.adjYou(r, c);
+      case 'bramble': return !x.stone && !x.heart && (x.own === 'you' || this.adjYou(r, c));
+      case 'moon': return x.own === 'you' && !x.stone;
+      case 'stone': return !x.stone && !x.heart && !x.grove && !this.wispAt(r, c);
+      case 'ember': return true;
+      case 'lantern': return x.own === 'you';
+      case 'snare': return !!this.wispAt(r, c);
+    }
+    return false;
+  },
+  claim(r, c) { const x = this.c(r, c); if (x.stone || x.heart) return false; if (x.own !== 'you') { x.own = 'you'; this.s.flash.add(r * 8 + c); } return true; },
+  apply(key, r, c) {
+    const s = this.s;
+    switch (key) {
+      case 'tend': this.claim(r, c); s.tended = true; break;
+      case 'bramble':
+        this.claim(r, c);
+        for (const [dr, dc] of DIR4) for (let k = 1; k <= 2; k++) { const rr = r + dr * k, cc = c + dc * k; if (!this.inB(rr, cc) || !this.claim(rr, cc)) break; }
+        break;
+      case 'moon': for (const [dr, dc] of DIR8) if (this.inB(r + dr, c + dc)) this.claim(r + dr, c + dc); break;
+      case 'stone': { const x = this.c(r, c); x.stone = true; x.own = 'none'; x.prot = 0; s.flash.add(r * 8 + c); break; }
+      case 'ember': {
+        let killed = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc; if (!this.inB(rr, cc)) continue;
+          const x = this.c(rr, cc); s.flash.add(rr * 8 + cc);
+          if (!x.stone && !x.heart && !x.grove) { x.own = 'none'; x.prot = 0; }
+          const w = this.wispAt(rr, cc); if (w) { s.wisps = s.wisps.filter((q) => q !== w); killed++; }
+        }
+        s.banished += killed; s.msg = killed ? `Wildfire! ${killed} wisp${killed > 1 ? 's' : ''} burned away.` : 'Wildfire scorches the glade.';
+        break;
+      }
+      case 'lantern':
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const rr = r + dr, cc = c + dc; if (this.inB(rr, cc) && this.c(rr, cc).own === 'you') { this.c(rr, cc).prot = 3; s.flash.add(rr * 8 + cc); } }
+        break;
+      case 'snare': this.wispAt(r, c).stun = 2; break;
+    }
+  },
+  // Any pocket of neutral/rot ground that can't reach the Heart is captured; wisps inside are banished.
+  enclose() {
+    const s = this.s, seen = new Set(); let banished = 0, captured = 0;
+    const wall = (r, c) => { const x = this.c(r, c); return x.stone || (x.own === 'you' && !this.wispAt(r, c)); };
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (seen.has(r * 8 + c) || wall(r, c)) continue;
+      const comp = [], q = [[r, c]]; seen.add(r * 8 + c); let heart = false;
+      while (q.length) {
+        const [cr, cc] = q.pop(); comp.push([cr, cc]); if (this.c(cr, cc).heart) heart = true;
+        for (const [dr, dc] of DIR4) { const nr = cr + dr, nc = cc + dc; if (this.inB(nr, nc) && !seen.has(nr * 8 + nc) && !wall(nr, nc)) { seen.add(nr * 8 + nc); q.push([nr, nc]); } }
+      }
+      if (heart) continue;
+      for (const [cr, cc] of comp) {
+        const w = this.wispAt(cr, cc); if (w) { s.wisps = s.wisps.filter((x) => x !== w); banished++; }
+        if (this.c(cr, cc).own !== 'you') captured++;
+        this.c(cr, cc).own = 'you'; s.flash.add(cr * 8 + cc);
+      }
+    }
+    s.banished += banished;
+    return { banished, captured };
+  },
+  wispStep(w) {
+    const s = this.s, key = (r, c) => r * 8 + c;
+    const pass = (r, c) => { const x = this.c(r, c); return !x.stone && !(x.own === 'you' && x.prot > 0) && !s.wisps.some((o) => o !== w && o.r === r && o.c === c); };
+    const prev = new Map([[key(w.r, w.c), null]]), q = [[w.r, w.c]];
+    while (q.length) {
+      const [r, c] = q.shift();
+      if ((r !== w.r || c !== w.c) && this.c(r, c).own === 'you') {
+        let cur = [r, c]; while (prev.get(key(...cur)) && (prev.get(key(...cur))[0] !== w.r || prev.get(key(...cur))[1] !== w.c)) cur = prev.get(key(...cur));
+        return cur;
+      }
+      for (const [dr, dc] of DIR4) { const nr = r + dr, nc = c + dc; if (this.inB(nr, nc) && !prev.has(key(nr, nc)) && pass(nr, nc)) { prev.set(key(nr, nc), [r, c]); q.push([nr, nc]); } }
+    }
+    return null;
+  },
+  tap(r, c) {
+    const s = this.s; if (s.result || s.busy) return;
+    if (!s.sel) {
+      const x = this.c(r, c), w = this.wispAt(r, c);
+      s.msg = w ? `A wisp${w.stun ? ' (snared)' : ''}. It heads for your nearest unprotected tile and turns ground to rot as it walks.` : x.heart ? 'The Heart of the rot. Pockets cut off from it are captured.' : x.grove ? 'Your Grove. If rot reaches it, the glade is lost.' : 'Pick Tend or an item from your satchel first.';
+      return this.render();
+    }
+    if (s.sel !== 'tend' && s.used >= 2) { s.msg = 'You can use 2 items per turn. End the turn to continue.'; return this.render(); }
+    if (!this.valid(s.sel, r, c)) { s.msg = `${GI[s.sel].name} can’t go there. ${GI[s.sel].info}`; return this.render(); }
+    s.flash = new Set(); s.msg = `${GI[s.sel].name} used.`;
+    this.apply(s.sel, r, c);
+    if (s.sel !== 'tend') { s.items[s.sel]--; s.used++; }
+    const e = this.enclose();
+    if (e.banished) s.msg = `Enclosed! ${e.banished} wisp${e.banished > 1 ? 's' : ''} banished and ${e.captured} tiles reclaimed.`;
+    else if (e.captured) s.msg += ` ${e.captured} cut-off tiles reclaimed.`;
+    if (s.sel !== 'tend' && !s.items[s.sel]) s.sel = null;
+    if (s.sel === 'tend') s.sel = null;
+    this.checkWin(); this.makePlanKeep(); this.render();
+  },
+  makePlanKeep() { const s = this.s; s.plan = s.plan.filter(([r, c]) => this.canTake(this.c(r, c)) && this.rotAdj(r, c)); },
+  checkWin() { const s = this.s; if (s.banished >= s.goal) s.result = { kind: 'win', title: 'The glade is purified', text: `Banished ${s.banished} wisps by turn ${s.turn}. Leftover seeds stay in your satchel.` }; },
+  endTurn() {
+    const s = this.s; if (s.result) return;
+    s.flash = new Set(); const notes = [];
+    for (const w of s.wisps) {
+      if (w.stun > 0) { w.stun--; continue; }
+      const nx = this.wispStep(w); if (!nx) continue;
+      w.r = nx[0]; w.c = nx[1]; const x = this.c(w.r, w.c);
+      if (!x.heart) { x.own = 'rot'; s.flash.add(w.r * 8 + w.c); }
+    }
+    for (const [r, c] of s.plan) { const x = this.c(r, c); if (this.canTake(x) && this.rotAdj(r, c)) { x.own = 'rot'; s.flash.add(r * 8 + c); } }
+    if (s.turn % 2 === 0) {
+      const hr = 1, hc = 6, spots = DIR8.map(([dr, dc]) => [hr + dr, hc + dc]).filter(([r, c]) => this.inB(r, c) && !this.c(r, c).stone && !this.wispAt(r, c));
+      if (spots.length) { const [r, c] = spots[rand(spots.length)]; s.wisps.push({ r, c, stun: 0 }); this.c(r, c).own = 'rot'; notes.push('The Heart spawns a new wisp.'); }
+    }
+    const e = this.enclose(); if (e.banished) notes.push(`${e.banished} wisp${e.banished > 1 ? 's were' : ' was'} cut off and banished.`);
+    for (const row of s.cells) for (const x of row) if (x.prot > 0) x.prot--;
+    const grove = s.cells.flat().find((x) => x.grove);
+    this.checkWin();
+    if (!s.result && grove.own === 'rot') s.result = { kind: 'lose', title: 'The Grove has fallen', text: 'Rot reached your Grove. The loop resets to dusk.' };
+    else if (!s.result && s.turn >= s.maxTurns) s.result = { kind: 'lose', title: 'The hourglass ran out', text: `You banished ${s.banished} of ${s.goal} wisps. The loop resets to dusk.` };
+    s.turn++; s.used = 0; s.tended = false;
+    if (!s.result) { this.makePlan(); s.msg = ['The rot spreads.', ...notes].join(' '); }
+    this.render();
+  },
+  render() {
+    const s = this.s, root = this.root, planSet = new Set(s.plan.map(([r, c]) => r * 8 + c));
+    const steps = new Map(); for (const w of s.wisps) if (!w.stun) { const n = this.wispStep(w); if (n) steps.set(w, n); }
+    const arrow = (w, n) => (n[0] < w.r ? '↑' : n[0] > w.r ? '↓' : n[1] < w.c ? '←' : '→');
+    const b = boardEl(8, 8, (r, c) => {
+      const x = this.c(r, c), w = this.wispAt(r, c);
+      let cls = x.stone ? 'o-stone' : x.own === 'you' ? 'o-you' : x.own === 'rot' ? 'o-rot' : '';
+      if (x.prot > 0) cls += ' o-prot';
+      if (planSet.has(r * 8 + c)) cls += ' plan';
+      if (s.flash.has(r * 8 + c)) cls += ' flash';
+      if (s.sel && !s.result && (s.sel === 'tend' || s.used < 2) && this.valid(s.sel, r, c)) cls += ' target';
+      let html = x.stone ? '🪨' : x.heart ? '🖤' : x.grove ? '🌳' : '';
+      if (w) html = (w.stun ? '🪢' : '') + '👻' + (steps.has(w) ? `<span class="badge bad">${arrow(w, steps.get(w))}</span>` : '');
+      if (x.prot > 0) html += `<span class="badge l gold">${x.prot}</span>`;
+      return { cls, html, label: w ? 'wisp' : x.heart ? 'heart' : x.grove ? 'grove' : x.stone ? 'stone' : x.own + ' tile' };
+    }, (r, c) => this.tap(r, c));
+    const sat = el('div', { class: 'satchel' }, el('h3', {}, `Satchel · ${2 - s.used} item uses left this turn`),
+      itemBtn({ icon: GI.tend.icon, name: s.tended ? 'Tend (used)' : 'Tend (free)', selected: s.sel === 'tend', disabled: s.tended || !!s.result,
+        onclick: () => { s.sel = s.sel === 'tend' ? null : 'tend'; s.msg = GI.tend.info; this.render(); } }),
+      Object.entries(s.items).map(([k, n]) => itemBtn({ icon: GI[k].icon, name: GI[k].name, count: n, anchored: GI[k].anchored, selected: s.sel === k,
+        disabled: !n || !!s.result, onclick: () => { s.sel = s.sel === k ? null : k; s.msg = GI[k].info; this.render(); } })));
+    root.replaceChildren(
+      el('h2', {}, 'Wildgrowth'),
+      el('p', { class: 'tagline' }, 'Fight 5 of 8 · Grow your land and wall in the wisps. Any pocket cut off from the Heart is banished.'),
+      el('div', { class: 'stats' }, stat('Banished', `${s.banished}/${s.goal}`, 'good'), stat('Turn', `${Math.min(s.turn, s.maxTurns)}/${s.maxTurns}`, 'gold'),
+        stat('Wisps', s.wisps.length, 'bad'), stat('Rot next turn', s.plan.length, 'rot')),
+      s.result ? resultCard(s.result, () => { this.reset(); this.render(); }) : el('p', { class: 'msg', 'aria-live': 'polite' }, s.msg),
+      b, el('div', { class: 'legend' }, el('span', {}, '🟩 yours'), el('span', {}, '🟪 rot'), el('span', {}, '⬚ dashed: rot spreads here next'), el('span', {}, '👻 arrow: where the wisp moves'), el('span', {}, 'gold number: lantern turns')),
+      sat,
+      el('div', { class: 'actions' }, btn('End turn', () => this.endTurn(), { primary: true, disabled: !!s.result }), btn('Restart fight', () => { this.reset(); this.render(); })),
+      help([
+        'Each turn: one free <b>Tend</b> plus up to 2 items from your satchel. Then end the turn.',
+        'Wisps walk toward your nearest unprotected tile and turn every tile they enter to rot.',
+        'The rot also spreads to the dashed tiles at the end of each turn. More each few turns.',
+        '<b>Enclose</b>: any area of neutral or rot ground that is walled off from the Heart by your land, stones or the board edge is captured at once, and every wisp in it is banished. A wisp holds its own tile, so you must surround it.',
+        'The Heart spawns a wisp every 2 turns. If rot reaches your Grove, you lose.',
+        'Seeds are scarce and don’t come back. Wildfire burns your land too, so aim it.',
+      ]));
+  },
+};
+
+// ================================================================ 5. WIZARD CHESS
+const CU = {
+  archmage: { name: 'Archmage', icon: '🧙', hp: 6, atk: 1, move: 'king', side: 'ally', zap: true },
+  ash:      { name: 'Ash, bonded wolf', icon: '🐺', hp: 3, atk: 3, move: 'knight', side: 'ally' },
+  wolf:     { name: 'Wolf', icon: '🐺', hp: 2, atk: 2, move: 'knight', side: 'ally', cost: 1 },
+  golem:    { name: 'Golem', icon: '🗿', hp: 6, atk: 2, move: 'orth1', side: 'ally', cost: 2 },
+  phoenix:  { name: 'Phoenix', icon: '🐦', hp: 2, atk: 2, move: 'diag3', side: 'ally', cost: 2, death: 'phoenix' },
+  skeleton: { name: 'Skeleton', icon: '💀', hp: 2, atk: 1, move: 'king', side: 'enemy' },
+  knight:   { name: 'Bone Knight', icon: '🐎', hp: 3, atk: 2, move: 'knight', side: 'enemy' },
+  wraith:   { name: 'Wraith', icon: '👻', hp: 2, atk: 2, move: 'diag3', side: 'enemy' },
+  rat:      { name: 'Plague Rat', icon: '🐀', hp: 1, atk: 1, move: 'king', side: 'enemy', death: 'rat' },
+  lich:     { name: 'Lich King', icon: '☠️', hp: 6, atk: 2, move: 'none', side: 'enemy' },
+};
+const CI = {
+  wolf:    { name: 'Wolf Egg', icon: '🥚', unit: 'wolf', info: 'Summon a Wolf (1 mana). Moves like a chess knight. 2 attack, 2 HP.' },
+  golem:   { name: 'Golem Shard', icon: '🪨', unit: 'golem', info: 'Summon a Golem (2 mana). One step sideways or straight. 2 attack, 6 HP. A great bolt blocker.' },
+  phoenix: { name: 'Phoenix Feather', icon: '🪶', unit: 'phoenix', info: 'Summon a Phoenix (2 mana). Flies diagonally up to 3. When it dies it explodes for 2 on every enemy around it.' },
+  swap:    { name: 'Swap Charm', icon: '🔄', info: 'Swap any two pieces on the board, yours or theirs (1 mana).' },
+  berserk: { name: 'Berserk Draught', icon: '🧪', info: 'One of your creatures gets +1 attack and can act again this turn, then dies at the end of the turn (1 mana).' },
+};
+const KNIGHT = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+const Chess = {
+  key: 'chess', N: 7,
+  reset() {
+    let id = 0;
+    const mk = (type, r, c, extra = {}) => ({ id: id++, type, r, c, hp: CU[type].hp, side: CU[type].side, acted: false, ...extra });
+    this.nextId = () => id++;
+    this.s = {
+      units: [mk('wraith', 0, 1), mk('lich', 0, 3), mk('knight', 1, 5), mk('skeleton', 2, 1), mk('rat', 2, 3), mk('skeleton', 2, 5),
+        mk('ash', 5, 2, { anchored: true }), mk('archmage', 6, 3)],
+      items: { wolf: 2, golem: 1, phoenix: 1, swap: 1, berserk: 1 }, sel: null, swapFirst: null,
+      mana: 3, turn: 1, maxTurns: 10, flash: new Set(), result: null, busy: false,
+      msg: 'Defeat the Lich King ☠️ within 10 turns. Enemies show where they will strike (red). The Lich’s bolt hits the first piece in its line, friend or foe.',
+    };
+  },
+  mk(type, r, c) { return { id: this.nextId(), type, r, c, hp: CU[type].hp, side: CU[type].side, acted: false }; },
+  inB(r, c) { return r >= 0 && r < 7 && c >= 0 && c < 7; },
+  at(r, c) { return this.s.units.find((u) => u.r === r && u.c === c); },
+  mage() { return this.s.units.find((u) => u.type === 'archmage'); },
+  atk(u) { return CU[u.type].atk + (u.berserk ? 1 : 0); },
+  targets(u) {
+    const out = [], def = CU[u.type];
+    const add = (r, c) => { if (!this.inB(r, c)) return false; const o = this.at(r, c); if (!o) { out.push({ r, c, kind: 'move' }); return true; } if (o.side !== u.side) out.push({ r, c, kind: 'attack', target: o }); return false; };
+    if (def.move === 'king') DIR8.forEach(([dr, dc]) => add(u.r + dr, u.c + dc));
+    else if (def.move === 'orth1') DIR4.forEach(([dr, dc]) => add(u.r + dr, u.c + dc));
+    else if (def.move === 'knight') KNIGHT.forEach(([dr, dc]) => add(u.r + dr, u.c + dc));
+    else if (def.move === 'diag3') for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) for (let k = 1; k <= 3; k++) if (!add(u.r + dr * k, u.c + dc * k)) break;
+    return out;
+  },
+  damage(u, n) {
+    if (!u || u.dead) return;
+    u.hp -= n; this.s.flash.add(u.r * 7 + u.c);
+    if (u.hp <= 0) this.kill(u);
+  },
+  kill(u) {
+    if (u.dead) return; u.dead = true;
+    const s = this.s; s.units = s.units.filter((x) => x !== u);
+    const d = CU[u.type].death;
+    if (d === 'phoenix') for (const [dr, dc] of DIR8) { const o = this.at(u.r + dr, u.c + dc); if (o && o.side === 'enemy') this.damage(o, 2); }
+    if (d === 'rat') for (const [dr, dc] of DIR8) this.damage(this.at(u.r + dr, u.c + dc), 1);
+    if (u.type === 'lich') s.result = { kind: 'win', title: 'The Lich King falls', text: `Won on turn ${s.turn}. Surviving creatures can be bonded and carried into the next loop.` };
+    else if (u.type === 'archmage' && !s.result) s.result = { kind: 'lose', title: 'The Archmage has fallen', text: 'The loop resets to dusk.' };
+  },
+  doAttack(a, t) {
+    const tr = t.r, tc = t.c;
+    this.damage(t, this.atk(a));
+    if (t.dead && !a.dead && !CU[a.type].zap && !this.at(tr, tc)) { a.r = tr; a.c = tc; }
+  },
+  summonTiles() { const m = this.mage(); if (!m) return []; return DIR8.map(([dr, dc]) => [m.r + dr, m.c + dc]).filter(([r, c]) => this.inB(r, c) && !this.at(r, c)); },
+  lichLine(l) {
+    const m = this.mage(); if (!m || (m.r !== l.r && m.c !== l.c)) return null;
+    const dr = Math.sign(m.r - l.r), dc = Math.sign(m.c - l.c), path = [];
+    let r = l.r + dr, c = l.c + dc;
+    while (this.inB(r, c)) { path.push([r, c]); const o = this.at(r, c); if (o) return { target: o, path }; r += dr; c += dc; }
+    return null;
+  },
+  intent(e) {
+    const m = this.mage(); if (!m) return null;
+    if (e.type === 'lich') {
+      const line = this.lichLine(e); if (line) return { kind: 'bolt', ...line, dmg: 2 };
+      const opts = DIR8.map(([dr, dc]) => [e.r + dr, e.c + dc]).filter(([r, c]) => this.inB(r, c) && !this.at(r, c) && (r === m.r || c === m.c));
+      return opts.length ? { kind: 'move', r: opts[0][0], c: opts[0][1] } : null;
+    }
+    const ts = this.targets(e), atks = ts.filter((t) => t.kind === 'attack');
+    if (atks.length) { atks.sort((a, b) => (b.target.type === 'archmage') - (a.target.type === 'archmage') || a.target.hp - b.target.hp); return { kind: 'attack', ...atks[0], dmg: this.atk(e) }; }
+    const cur = cheb(e, m); let best = null;
+    for (const t of ts) { const d = cheb(t, m); if (d < cur && (!best || d < best.d)) best = { ...t, d }; }
+    return best ? { kind: 'move', r: best.r, c: best.c } : null;
+  },
+  tap(r, c) {
+    const s = this.s; if (s.result || s.busy) return;
+    const u = this.at(r, c); s.flash = new Set();
+    if (s.sel && CI[s.sel]?.unit) {
+      const cost = CU[CI[s.sel].unit].cost;
+      if (!this.summonTiles().some(([rr, cc]) => rr === r && cc === c)) { s.msg = 'Summon onto an empty tile next to the Archmage.'; return this.render(); }
+      if (s.mana < cost) { s.msg = `Not enough mana: this summon costs ${cost}.`; return this.render(); }
+      s.units.push(this.mk(CI[s.sel].unit, r, c)); s.mana -= cost; s.items[s.sel]--; s.msg = `${CU[CI[s.sel].unit].name} summoned. It can act this turn.`; s.flash.add(r * 7 + c); s.sel = null; return this.render();
+    }
+    if (s.sel === 'swap') {
+      if (!u) { s.msg = 'Tap a piece to swap.'; return this.render(); }
+      if (!s.swapFirst) { s.swapFirst = u; s.msg = `Swap ${CU[u.type].name} with…?`; return this.render(); }
+      if (s.swapFirst === u) { s.swapFirst = null; s.msg = 'Swap cancelled.'; return this.render(); }
+      if (s.mana < 1) { s.msg = 'Not enough mana.'; return this.render(); }
+      const a = s.swapFirst; [a.r, a.c, u.r, u.c] = [u.r, u.c, a.r, a.c]; s.mana--; s.items.swap--; s.sel = null; s.swapFirst = null;
+      s.flash.add(a.r * 7 + a.c); s.flash.add(u.r * 7 + u.c); s.msg = 'Swapped.'; return this.render();
+    }
+    if (s.sel === 'berserk') {
+      if (!u || u.side !== 'ally' || u.type === 'archmage') { s.msg = 'Pick one of your creatures (not the Archmage).'; return this.render(); }
+      if (s.mana < 1) { s.msg = 'Not enough mana.'; return this.render(); }
+      u.berserk = true; u.acted = false; s.mana--; s.items.berserk--; s.sel = null; s.msg = `${CU[u.type].name} goes berserk: +1 attack, can act again, dies at turn end.`; return this.render();
+    }
+    if (typeof s.sel === 'number') {
+      const me = s.units.find((x) => x.id === s.sel);
+      const t = me && this.targets(me).find((t) => t.r === r && t.c === c);
+      if (t) {
+        if (s.mana < 1) { s.msg = 'No mana left. End the turn.'; return this.render(); }
+        s.mana--; me.acted = true; s.sel = null;
+        if (t.kind === 'move') { me.r = r; me.c = c; s.msg = `${CU[me.type].name} moves.`; }
+        else { const name = CU[t.target.type].name; this.doAttack(me, t.target); s.msg = `${CU[me.type].name} hits ${name}${t.target.dead ? ' and destroys it' : ''}.`; }
+        return this.render();
+      }
+    }
+    if (u && u.side === 'ally') {
+      if (u.acted) { s.sel = null; s.msg = `${CU[u.type].name} has already acted this turn.`; return this.render(); }
+      s.sel = u.id; s.msg = `${CU[u.type].name}: ${u.hp} HP, ${this.atk(u)} attack. Gold tiles are moves, red are attacks (1 mana).`; return this.render();
+    }
+    if (u) { const i = this.intent(u); s.msg = `${CU[u.type].name}: ${u.hp} HP, ${this.atk(u)} attack. ${i ? (i.kind === 'move' ? 'It will advance.' : 'It will strike the marked tile.') : 'It will hold.'}`; }
+    s.sel = null; this.render();
+  },
+  async endTurn() {
+    const s = this.s; if (s.result || s.busy) return;
+    s.busy = true; s.sel = null; s.swapFirst = null;
+    const enemies = s.units.filter((u) => u.side === 'enemy').sort((a, b) => b.r - a.r);
+    for (const e of enemies) {
+      if (e.dead || s.result) continue;
+      s.flash = new Set(); const i = this.intent(e);
+      if (!i) continue;
+      if (i.kind === 'move') { e.r = i.r; e.c = i.c; }
+      else if (i.kind === 'bolt') { s.msg = `The Lich’s bolt strikes ${CU[i.target.type].name}!`; this.damage(i.target, 2); }
+      else this.doAttack(e, i.target);
+      this.render(); await wait(260);
+    }
+    if (!s.result) {
+      for (const u of s.units.filter((u) => u.berserk)) this.kill(u);
+      s.turn++;
+      const notes = [];
+      if (s.turn > s.maxTurns && !s.result) s.result = { kind: 'lose', title: 'The hourglass ran out', text: 'The Lich still stands. The loop resets to dusk.' };
+      else if (s.turn % 3 === 0) {
+        const l = s.units.find((u) => u.type === 'lich');
+        if (l) { let n = 0; for (const [dr, dc] of shuffle(DIR8.slice())) { const r = l.r + dr, c = l.c + dc; if (n < 2 && this.inB(r, c) && !this.at(r, c)) { s.units.push(this.mk('skeleton', r, c)); n++; } } if (n) notes.push(`The Lich raises ${n} skeleton${n > 1 ? 's' : ''}.`); }
+      }
+      for (const u of s.units) u.acted = false;
+      s.mana = 3; if (!s.result) s.msg = ['Your turn. 3 mana.', ...notes].join(' ');
+    }
+    s.busy = false; this.render();
+  },
+  render() {
+    const s = this.s, root = this.root;
+    const me = typeof s.sel === 'number' ? s.units.find((u) => u.id === s.sel) : null;
+    const moveSet = new Map(); if (me) for (const t of this.targets(me)) moveSet.set(t.r * 7 + t.c, t.kind);
+    const summon = s.sel && CI[s.sel]?.unit ? new Set(this.summonTiles().map(([r, c]) => r * 7 + c)) : null;
+    const threat = new Map(), bolt = new Set(), dest = new Set();
+    if (!s.result) for (const e of s.units.filter((u) => u.side === 'enemy')) {
+      const i = this.intent(e); if (!i) continue;
+      if (i.kind === 'move') dest.add(i.r * 7 + i.c);
+      else { const k = i.target.r * 7 + i.target.c; threat.set(k, (threat.get(k) || 0) + i.dmg); if (i.kind === 'bolt') i.path.forEach(([r, c]) => bolt.add(r * 7 + c)); }
+    }
+    const b = boardEl(7, 7, (r, c) => {
+      const u = this.at(r, c), k = r * 7 + c; let cls = '', html = '';
+      if (u) {
+        html = `<span class="${u.side}">${CU[u.type].icon}</span><span class="badge ${u.side === 'ally' ? 'good' : 'bad'}">${u.hp}</span>`;
+        if (u.anchored) html += '<span class="badge l top">⚓</span>';
+        if (u.berserk) html += '<span class="badge l">🧪</span>';
+        if (u.side === 'ally' && u.acted) html += '<span class="badge l">✓</span>';
+      } else if (dest.has(k)) html = '<span style="opacity:.5;font-size:60%">•</span>';
+      if (bolt.has(k) && !u) cls += ' hex';
+      if (threat.has(k)) { cls += ' attack'; html += `<span class="badge bad top">−${threat.get(k)}</span>`; }
+      if (me && me.r === r && me.c === c) cls += ' sel';
+      if (moveSet.has(k)) cls += moveSet.get(k) === 'attack' ? ' attack' : ' target';
+      if (summon && summon.has(k)) cls += ' target';
+      if (s.swapFirst && s.swapFirst.r === r && s.swapFirst.c === c) cls += ' sel';
+      if (s.flash.has(k)) cls += ' flash';
+      return { cls, html, label: u ? `${CU[u.type].name}, ${u.hp} HP` : 'empty' };
+    }, (r, c) => this.tap(r, c));
+    const sat = el('div', { class: 'satchel' }, el('h3', {}, 'Satchel'),
+      Object.entries(s.items).map(([k, n]) => itemBtn({ icon: CI[k].icon, name: CI[k].name + (CI[k].unit ? ` (${CU[CI[k].unit].cost})` : ' (1)'), count: n, selected: s.sel === k,
+        disabled: !n || !!s.result || s.busy, onclick: () => { s.swapFirst = null; s.sel = s.sel === k ? null : k; s.msg = CI[k].info; this.render(); } })));
+    const mage = this.mage();
+    root.replaceChildren(
+      el('h2', {}, 'Wizard Chess'),
+      el('p', { class: 'tagline' }, 'Fight 5 of 8 · Summon creatures that move like chess pieces. Kill the Lich King before the hourglass runs out.'),
+      el('div', { class: 'stats' }, stat('Mana', `${s.mana}/3`, 'gold'), stat('Turn', `${Math.min(s.turn, s.maxTurns)}/${s.maxTurns}`, 'gold'),
+        stat('Archmage', `${mage ? mage.hp : 0}/6 HP`, 'good'), stat('Lich', `${s.units.find((u) => u.type === 'lich')?.hp ?? 0}/6 HP`, 'bad'),
+        stat('Reinforcements', s.turn % 3 === 2 ? 'next turn' : `in ${3 - (s.turn % 3)}`, 'bad')),
+      s.result ? resultCard(s.result, () => { this.reset(); this.render(); }) : el('p', { class: 'msg', 'aria-live': 'polite' }, s.msg),
+      b, el('div', { class: 'legend' }, el('span', {}, 'red −N: damage coming there'), el('span', {}, '🟪 lich bolt path'), el('span', {}, '• enemy moving here'), el('span', {}, '✓ already acted')),
+      sat,
+      el('div', { class: 'actions' }, btn('End turn', () => this.endTurn(), { primary: true, disabled: !!s.result || s.busy }), btn('Restart fight', () => { this.reset(); this.render(); }, { disabled: s.busy })),
+      help([
+        'You have 3 mana per turn. Moving or attacking with a piece costs 1. Each piece acts once per turn.',
+        'Tap your piece to see its moves (gold) and attacks (red). Attacks that kill move your piece into that square, like a chess capture.',
+        'The Archmage moves one step and zaps an adjacent enemy for 1 without moving.',
+        'Summon from your satchel onto an empty tile next to the Archmage. Summoned creatures can act right away.',
+        'The Lich fires a bolt down its row or column at the Archmage, but it hits the first piece in the way. Block it, or let it hit its own troops.',
+        'Plague Rats burst when they die, hurting everything around them. The Phoenix explodes on enemies when it dies.',
+        'Every 3 turns the Lich raises 2 skeletons. Ash ⚓ is your bonded wolf from an earlier loop.',
+      ]));
+  },
+};
+
+// ================================================================ 6. DELVE
+const DI = {
+  bomb:  { name: 'Bomb', icon: '💣', info: 'Throw up to 3 tiles away. Blasts a 3×3 area for 2 damage, you included. Cracked floor collapses into a chasm.' },
+  plank: { name: 'Bridge Plank', icon: '🪵', info: 'Lay across a chasm tile next to you.' },
+  blink: { name: 'Blink Chalk', icon: '✨', info: 'Teleport to an open tile up to 4 away.' },
+  frost: { name: 'Frost Rune', icon: '❄️', info: 'Freeze a whole pool of water (within 3 tiles) into walkable ice.' },
+  meat:  { name: 'Lure Meat', icon: '🍖', info: 'Throw up to 4 tiles. Monsters chase it for 3 turns instead of you. The Ogre smashes anything near it.' },
+  rope:  { name: 'Grappling Rope', icon: '🪝', info: 'Tap a tile in a straight line. You fly that way until something stops you. A monster you slam into takes 1 damage.', anchored: true },
+};
+const DM = {
+  goblin:   { name: 'Goblin', icon: '👺', hp: 2, dmg: 1, slow: false },
+  slime:    { name: 'Slime', icon: '🟢', hp: 2, dmg: 1, slow: true, split: true },
+  slimelet: { name: 'Slimelet', icon: '🟩', hp: 1, dmg: 1, slow: true },
+  bat:      { name: 'Bat', icon: '🦇', hp: 1, dmg: 1, slow: false, fly: true },
+  ogre:     { name: 'Ogre', icon: '👹', hp: 4, dmg: 2, slow: true, cleave: true, maxRow: 1 },
+};
+const DELVE_MAP = [
+  '##.>.##',
+  '...O...',
+  '___=___',
+  '....~~C',
+  '##..~~~',
+  'C.g..~.',
+  '.::.##.',
+  '..s..b.',
+  '#..@..#',
+];
+const Delve = {
+  key: 'delve', R: 9, C: 7,
+  reset() {
+    const tiles = [], mons = []; let player = null;
+    DELVE_MAP.forEach((row, r) => { tiles.push([...row].map((ch, c) => {
+      const mon = { g: 'goblin', s: 'slime', b: 'bat', O: 'ogre' }[ch];
+      if (mon) mons.push({ type: mon, r, c, hp: DM[mon].hp, tick: 0 });
+      if (ch === '@') player = { r, c };
+      return { t: { '#': 'wall', '_': 'chasm', '=': 'bridge', '~': 'water', ':': 'crack', '>': 'stairs' }[ch] || 'floor', chest: ch === 'C' ? null : undefined };
+    })); });
+    tiles[5][0].chest = ['meat', 'bomb']; tiles[3][6].chest = ['shard', 'bomb'];
+    this.s = { tiles, mons, player, hp: 5, maxHp: 5, sand: 24, items: { bomb: 1, plank: 1, blink: 1, frost: 1, rope: 1 }, sel: null, meat: null, tick: 0,
+      jump: null, flash: new Set(), result: null,
+      msg: 'Floor 4. Reach the stairs ⏷ before your sand runs out. Every step or item costs 1 sand, and the monsters move after each one.' };
+  },
+  inB(r, c) { return r >= 0 && r < 9 && c >= 0 && c < 7; },
+  T(r, c) { return this.s.tiles[r][c]; },
+  mon(r, c) { return this.s.mons.find((m) => m.r === r && m.c === c); },
+  hasChest(r, c) { return Array.isArray(this.T(r, c).chest); },
+  walk(r, c) { const t = this.T(r, c).t; return ['floor', 'bridge', 'ice', 'stairs', 'crack'].includes(t); },
+  free(r, c) { const p = this.s.player; return this.walk(r, c) && !this.hasChest(r, c) && !this.mon(r, c) && !(p.r === r && p.c === c); },
+  monPass(m, r, c) {
+    const d = DM[m.type];
+    if (d.maxRow != null && r > d.maxRow) return false;
+    if (this.hasChest(r, c)) return false;
+    return d.fly ? this.T(r, c).t !== 'wall' : this.walk(r, c);
+  },
+  validItem(k, r, c) {
+    const s = this.s, p = s.player, d = cheb(p, { r, c }), t = this.T(r, c).t;
+    switch (k) {
+      case 'bomb': return d <= 3 && t !== 'wall';
+      case 'plank': return d === 1 && (r === p.r || c === p.c) && t === 'chasm';
+      case 'blink': return d <= 4 && d > 0 && this.free(r, c);
+      case 'frost': return d <= 3 && t === 'water';
+      case 'meat': return d <= 4 && this.walk(r, c) && !this.hasChest(r, c) && !this.mon(r, c);
+      case 'rope': return (r === p.r) !== (c === p.c) && this.ropeEnd(r, c).moved > 0;
+    }
+    return false;
+  },
+  ropeEnd(r, c) {
+    const p = this.s.player, dr = Math.sign(r - p.r), dc = Math.sign(c - p.c);
+    let cr = p.r, cc = p.c, moved = 0, hit = null;
+    while (this.inB(cr + dr, cc + dc)) {
+      const nr = cr + dr, nc = cc + dc, m = this.mon(nr, nc);
+      if (m) { hit = m; break; }
+      if (!this.walk(nr, nc) || this.hasChest(nr, nc)) break;
+      cr = nr; cc = nc; moved++;
+    }
+    return { r: cr, c: cc, moved, hit };
+  },
+  hurtMon(m, n) {
+    const s = this.s; if (!m || m.dead) return;
+    m.hp -= n; s.flash.add(m.r * 7 + m.c);
+    if (m.hp <= 0) {
+      m.dead = true; s.mons = s.mons.filter((x) => x !== m);
+      if (DM[m.type].split) { let n2 = 0; for (const [dr, dc] of DIR4) { const r = m.r + dr, c = m.c + dc; if (n2 < 2 && this.inB(r, c) && this.free(r, c)) { s.mons.push({ type: 'slimelet', r, c, hp: 1, tick: 0 }); n2++; } } }
+    }
+  },
+  hurtPlayer(n) { this.s.hp -= n; this.s.flash.add(this.s.player.r * 7 + this.s.player.c); },
+  descend(how) {
+    const s = this.s; s.hp -= 2;
+    s.result = s.hp > 0 ? { kind: 'win', title: 'You dropped to floor 5', text: `${how} You took 2 damage in the fall and kept ${s.sand} sand. A risky shortcut, but it skips the stairs.` }
+      : { kind: 'lose', title: 'The fall was fatal', text: 'The loop resets to dusk.' };
+  },
+  useItem(k, r, c) {
+    const s = this.s, p = s.player;
+    if (k === 'bomb') {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr, cc = c + dc; if (!this.inB(rr, cc)) continue;
+        s.flash.add(rr * 7 + cc);
+        this.hurtMon(this.mon(rr, cc), 2);
+        if (p.r === rr && p.c === cc) this.hurtPlayer(2);
+        const t = this.T(rr, cc);
+        if (t.t === 'crack') { t.t = 'chasm'; const m = this.mon(rr, cc); if (m && !DM[m.type].fly) { m.dead = true; s.mons = s.mons.filter((x) => x !== m); } if (p.r === rr && p.c === cc && s.hp > 0) this.descend('The floor gave way under you.'); }
+      }
+      s.msg = 'BOOM.';
+    } else if (k === 'plank') { this.T(r, c).t = 'bridge'; s.msg = 'Plank laid across the chasm.'; }
+    else if (k === 'blink') { p.r = r; p.c = c; s.msg = 'Blink!'; }
+    else if (k === 'frost') {
+      const q = [[r, c]]; while (q.length) { const [cr, cc] = q.pop(); if (!this.inB(cr, cc) || this.T(cr, cc).t !== 'water') continue; this.T(cr, cc).t = 'ice'; s.flash.add(cr * 7 + cc); DIR4.forEach(([dr, dc]) => q.push([cr + dr, cc + dc])); }
+      s.msg = 'The pool freezes solid.';
+    } else if (k === 'meat') { s.meat = { r, c, turns: 3 }; s.msg = 'Meat thrown. Every monster wants it now.'; }
+    else if (k === 'rope') { const e = this.ropeEnd(r, c); p.r = e.r; p.c = e.c; if (e.hit) this.hurtMon(e.hit, 1); s.msg = e.hit ? `You slam into the ${DM[e.hit.type].name}!` : 'Whoosh.'; }
+    s.items[k]--;
+  },
+  tap(r, c) {
+    const s = this.s, p = s.player; if (s.result) return;
+    s.flash = new Set();
+    if (s.sel) {
+      if (!this.validItem(s.sel, r, c)) { s.msg = `${DI[s.sel].name} can’t target that tile. ${DI[s.sel].info}`; return this.render(); }
+      const k = s.sel; s.sel = null; this.useItem(k, r, c); return this.afterAction();
+    }
+    const d = Math.abs(r - p.r) + Math.abs(c - p.c);
+    if (d !== 1) { const m = this.mon(r, c); s.msg = m ? `${DM[m.type].name}: ${m.hp} HP, hits for ${DM[m.type].dmg}.${DM[m.type].slow ? ' Slow: acts every other turn.' : ''}${DM[m.type].fly ? ' Flies.' : ''}` : 'Tap a tile next to you to move, or pick an item.'; return this.render(); }
+    const m = this.mon(r, c), t = this.T(r, c);
+    if (m) { this.hurtMon(m, 1); s.msg = `You hit the ${DM[m.type].name}${m.dead ? ' and kill it' : ''}.`; return this.afterAction(); }
+    if (this.hasChest(r, c)) {
+      const loot = t.chest; t.chest = undefined; const names = [];
+      for (const k of loot) { if (k === 'shard') { s.sand += 6; names.push('a Sand Shard (+6 sand)'); } else { s.items[k] = (s.items[k] || 0) + 1; names.push(DI[k].name); } }
+      s.msg = 'Chest opened: ' + names.join(', ') + '.'; return this.afterAction();
+    }
+    if (t.t === 'chasm') {
+      if (s.jump === r * 7 + c) { s.sand--; this.descend('You leapt into the chasm.'); return this.render(); }
+      s.jump = r * 7 + c; s.msg = 'Tap the chasm again to jump down to the next floor (costs 2 HP, skips the stairs).'; return this.render();
+    }
+    if (!this.walk(r, c)) { s.msg = t.t === 'water' ? 'Too deep to wade. Freeze it?' : 'Blocked.'; return this.render(); }
+    p.r = r; p.c = c; s.msg = '';
+    if (t.t === 'stairs') { s.sand--; s.result = { kind: 'win', title: 'Down the stairs', text: `Reached floor 5 with ${s.hp} HP and ${s.sand} sand left. Leftover items come with you.` }; return this.render(); }
+    this.afterAction();
+  },
+  // BFS distance from the goal (player or meat) over tiles this monster can cross.
+  distMap(m, goal) {
+    const dist = new Map([[goal.r * 7 + goal.c, 0]]), q = [goal];
+    while (q.length) { const cur = q.shift(); for (const [dr, dc] of DIR4) { const r = cur.r + dr, c = cur.c + dc; if (!this.inB(r, c) || dist.has(r * 7 + c) || !this.monPass(m, r, c)) continue; dist.set(r * 7 + c, dist.get(cur.r * 7 + cur.c) + 1); q.push({ r, c }); } }
+    return dist;
+  },
+  plan(m) {
+    const s = this.s, p = s.player, d = DM[m.type];
+    if (d.slow && (s.tick + m.tick) % 2 === 1) return { kind: 'rest' };
+    const adj = (a) => Math.abs(a.r - m.r) + Math.abs(a.c - m.c) === 1;
+    if (adj(p)) return { kind: 'attack' };
+    const goal = s.meat || p;
+    if (s.meat && adj(s.meat)) return d.cleave ? { kind: 'smash' } : { kind: 'eat' };
+    const dist = this.distMap(m, goal); let best = null;
+    for (const [dr, dc] of DIR4) { const r = m.r + dr, c = m.c + dc; if (!this.inB(r, c) || !this.monPass(m, r, c) || this.mon(r, c) || (p.r === r && p.c === c)) continue; const v = dist.get(r * 7 + c); if (v != null && (!best || v < best.v)) best = { r, c, v }; }
+    const here = dist.get(m.r * 7 + m.c);
+    return best && (here == null || best.v < here) ? { kind: 'move', r: best.r, c: best.c } : { kind: 'wait' };
+  },
+  afterAction() {
+    const s = this.s, p = s.player; s.sand--; s.jump = null;
+    if (!s.result) for (const m of s.mons.slice()) {
+      if (m.dead || s.hp <= 0) continue;
+      let pl = this.plan(m);
+      if (DM[m.type].fly && pl.kind === 'move' && Math.random() < 0.4) {
+        const opts = DIR4.map(([dr, dc]) => [m.r + dr, m.c + dc]).filter(([r, c]) => this.inB(r, c) && this.monPass(m, r, c) && !this.mon(r, c) && !(p.r === r && p.c === c));
+        if (opts.length) { const [r, c] = opts[rand(opts.length)]; pl = { kind: 'move', r, c }; }
+      }
+      if (pl.kind === 'move') { m.r = pl.r; m.c = pl.c; }
+      else if (pl.kind === 'attack' || pl.kind === 'smash') {
+        if (DM[m.type].cleave) { for (const o of s.mons.filter((o) => o !== m && Math.abs(o.r - m.r) + Math.abs(o.c - m.c) === 1)) this.hurtMon(o, 2); if (Math.abs(p.r - m.r) + Math.abs(p.c - m.c) === 1) this.hurtPlayer(2); s.msg += ' The Ogre smashes everything around it!'; }
+        else this.hurtPlayer(DM[m.type].dmg);
+      }
+    }
+    s.tick++;
+    if (s.meat && --s.meat.turns <= 0) { s.meat = null; s.msg += ' The meat is gone.'; }
+    if (!s.result && s.hp <= 0) s.result = { kind: 'lose', title: 'You were slain', text: 'The loop resets to dusk. Anchored items survive.' };
+    else if (!s.result && s.sand <= 0) s.result = { kind: 'lose', title: 'Your sand ran out', text: 'The hourglass is empty. The loop resets to dusk.' };
+    if (!s.msg.trim()) s.msg = 'You move.';
+    this.render();
+  },
+  render() {
+    const s = this.s, root = this.root, p = s.player;
+    const plans = new Map(); let incoming = 0;
+    if (!s.result) for (const m of s.mons) { const pl = this.plan(m); plans.set(m, pl); if (pl.kind === 'attack') incoming += DM[m.type].dmg; }
+    const b = boardEl(9, 7, (r, c) => {
+      const t = this.T(r, c), m = this.mon(r, c), k = r * 7 + c;
+      let cls = 't-' + t.t, html = '';
+      if (t.t === 'stairs') html = '⏷';
+      if (this.hasChest(r, c)) html = '🧰';
+      if (s.meat && s.meat.r === r && s.meat.c === c) html = '🍖' + `<span class="badge l">${s.meat.turns}</span>`;
+      if (m) {
+        const pl = plans.get(m);
+        const tag = !pl ? '' : pl.kind === 'rest' ? '💤' : pl.kind === 'move' ? (pl.r < r ? '↑' : pl.r > r ? '↓' : pl.c < c ? '←' : '→') : pl.kind === 'attack' ? '⚔' : pl.kind === 'smash' ? '💥' : '';
+        html = `<span class="enemy">${DM[m.type].icon}</span><span class="badge bad">${m.hp}</span>` + (tag ? `<span class="badge l top">${tag}</span>` : '');
+      }
+      if (p.r === r && p.c === c) { html = '<span class="ally">🧝</span>'; if (incoming) cls += ' attack', html += `<span class="badge bad top">−${incoming}</span>`; }
+      if (s.sel && !s.result && this.validItem(s.sel, r, c)) cls += ' target';
+      else if (!s.sel && !s.result && Math.abs(r - p.r) + Math.abs(c - p.c) === 1 && (this.walk(r, c) || m || this.hasChest(r, c) || t.t === 'chasm')) cls += m ? ' attack' : ' target';
+      if (s.jump === k) cls += ' sel';
+      if (s.flash.has(k)) cls += ' flash';
+      return { cls, html, label: m ? DM[m.type].name : t.t };
+    }, (r, c) => this.tap(r, c));
+    const sat = el('div', { class: 'satchel' }, el('h3', {}, 'Satchel'),
+      Object.entries(s.items).map(([k, n]) => itemBtn({ icon: DI[k].icon, name: DI[k].name, count: n, anchored: DI[k].anchored, selected: s.sel === k,
+        disabled: !n || !!s.result, onclick: () => { s.sel = s.sel === k ? null : k; s.msg = DI[k].info; this.render(); } })));
+    root.replaceChildren(
+      el('h2', {}, 'Delve'),
+      el('p', { class: 'tagline' }, 'Floor 4 of 6 · Every step costs sand. Find a way past the Ogre, or make your own.'),
+      el('div', { class: 'stats' }, stat('HP', `${Math.max(0, s.hp)}/${s.maxHp}`, 'good'), stat('Sand', s.sand, 'gold'), stat('Incoming', incoming, incoming ? 'bad' : '')),
+      s.result ? resultCard(s.result, () => { this.reset(); this.render(); }) : el('p', { class: 'msg', 'aria-live': 'polite' }, s.msg),
+      b, el('div', { class: 'legend' }, el('span', {}, '↑→ monster’s next step'), el('span', {}, '⚔ attacks you next'), el('span', {}, '💤 resting'), el('span', {}, '⬛ chasm · 🟦 water · striped: cracked floor')),
+      sat,
+      el('div', { class: 'actions' }, btn('Restart floor', () => { this.reset(); this.render(); })),
+      help([
+        'Tap a tile next to you to move, attack a monster (1 damage) or open a chest. Each costs 1 sand, then every monster acts.',
+        'Pick an item, then tap a gold-outlined tile to use it. Items are found in chests and are gone once used.',
+        'Slow monsters (Slime, Ogre) act every other turn. Bats fly over water and chasms and flutter randomly.',
+        'The Ogre never leaves the top rows and hits everything around it, monsters included. Lure Meat can make it smash its friends.',
+        'Slimes split in two when they die. Cracked floor turns into a chasm when bombed.',
+        'Jumping into a chasm drops you to the next floor for 2 HP, a costly shortcut.',
+      ]));
+  },
+};
+
+// ---------------------------------------------------------------- tabs
+const GAMES = { ritual: Ritual, glade: Glade, chess: Chess, delve: Delve };
+for (const g of Object.values(GAMES)) { g.root = document.getElementById('game-' + g.key); g.reset(); }
+function show(key) {
+  if (!GAMES[key]) key = 'ritual';
+  for (const k of Object.keys(GAMES)) {
+    document.getElementById('game-' + k).hidden = k !== key;
+    document.getElementById('tab-' + k).setAttribute('aria-selected', String(k === key));
+  }
+  GAMES[key].render();
+  try { localStorage.setItem('grid-demo-tab', key); } catch (e) { /* storage unavailable */ }
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.game)));
+let first = location.hash.slice(1);
+if (!GAMES[first]) { try { first = localStorage.getItem('grid-demo-tab') || ''; } catch (e) { first = ''; } }
+show(first);
+</script>
