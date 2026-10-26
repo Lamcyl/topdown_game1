@@ -1,0 +1,83 @@
+<title>Orbforge Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* Layout: one phone-width column: enemies on top, the 6×7 factory, then tools. Placeholder art only; final look comes from the chosen art style. */
+  :root {
+    --bg: #15131c; --panel: #201d2a; --line: #3a3549; --fg: #ece6d6; --muted: #a59fb3;
+    --gold: #e0b55c; --good: #6fcf8a; --bad: #e0627a; --cell: #2a2636; --cell-alt: #2f2a3d;
+    --fire: #c4531f; --water: #2e6fa8; --earth: #7a6040; --steam: #8d98a8; --magma: #b83d12; --mud: #5a4630;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif; --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.45 var(--body); }
+  .wrap { max-width: 520px; margin: 0 auto; padding-block: 12px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #app { display: flex; flex-direction: column; gap: 10px; }
+  h1 { font: 700 22px/1.2 var(--display); letter-spacing: 0.05em; margin: 0 0 8px; }
+  h2 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: 0.03em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  .levels { display: flex; flex-direction: column; gap: 6px; }
+  .lvl { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: 600 15px var(--body); cursor: pointer; }
+  .lvl:disabled { opacity: .45; cursor: default; }
+  .lvl .num { font: 700 16px var(--display); color: var(--gold); text-align: center; }
+  .lvl .stars { color: var(--gold); letter-spacing: 2px; }
+  .locked-note { font-size: 13px; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; }
+  .lvlhead { display: flex; align-items: center; gap: 10px; }
+  .foes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .foe { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .foe.empty { border-style: dashed; justify-content: center; align-items: center; min-height: 70px; }
+  .foe.dead { opacity: .55; }
+  .foe.hitfx { animation: hit .4s ease-out; }
+  @keyframes hit { from { box-shadow: 0 0 0 3px var(--bad), 0 0 18px var(--bad); } to { box-shadow: none; } }
+  .foe-top { display: flex; gap: 8px; align-items: center; } .foe-ic { font-size: 30px; }
+  .hpbar { height: 8px; background: #3a2230; border-radius: 4px; overflow: hidden; } .hpfill { height: 100%; background: var(--bad); transition: width .3s; }
+  .hptext { font-size: 12px; font-variant-numeric: tabular-nums; } .tags { font-size: 11px; color: var(--muted); }
+  .msg { margin: 0; min-height: 2.9em; padding: 8px 10px; background: var(--panel); border-left: 3px solid var(--gold); border-radius: 4px; font-size: 14px; }
+  .result { padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+  .result.win { border-color: var(--good); } .result.lose { border-color: var(--bad); }
+  .result strong { font: 700 16px var(--display); }
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .cell { position: relative; aspect-ratio: 1; max-width: 100%; border: 0; border-radius: 5px; padding: 0; cursor: pointer; background: var(--cell); color: var(--fg); font-size: clamp(16px, 6vw, 28px); line-height: 1; display: grid; place-items: center; }
+  .cell:nth-child(odd) { background: var(--cell-alt); }
+  .cell.rock { background: #0f0e14 !important; cursor: default; font-size: 70%; opacity: .7; }
+  .cell.belt { background: #3b3424 !important; } .cell.belt .arrow { color: var(--gold); font-weight: 700; }
+  .cell.launch { background: #3a2a2a !important; } .cell.special { background: #2d3348 !important; }
+  .cell.well.el-fire { background: var(--fire) !important; } .cell.well.el-water { background: var(--water) !important; } .cell.well.el-earth { background: var(--earth) !important; }
+  .cell.target { box-shadow: inset 0 0 0 1px rgba(224,181,92,.55); }
+  .cell.flash { animation: flash .45s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px #fff, 0 0 16px var(--gold); } to { box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .cell.flash, .foe.hitfx { animation: none; } .hpfill { transition: none; } }
+  .orb { filter: drop-shadow(0 0 6px #fff8); }
+  .cell .badge { position: absolute; right: 2px; bottom: 1px; font: 600 10px/1 var(--body); color: var(--fg); background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 3px; }
+  .cell .badge.l { left: 2px; right: auto; } .cell .badge.top { top: 1px; bottom: auto; }
+  .cell .badge.gold { color: #1a1408; background: var(--gold); } .cell .badge.pow { color: #1a1408; background: #fff; font-size: 11px; }
+  .cell .badge.dir { color: var(--gold); } .cell .badge.hold { background: #4a3a6a; }
+  .cell:focus-visible, .btn:focus-visible, .item:focus-visible, .lvl:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+  .tools h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); cursor: pointer; font-size: 11px; min-width: 0; }
+  .item .ic { font-size: 22px; line-height: 1.1; } .item .nm { text-align: center; overflow-wrap: anywhere; }
+  .item .ct { position: absolute; top: 3px; right: 5px; font: 600 11px var(--body); color: var(--gold); }
+  .item[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); background: #2c2636; }
+  .item:disabled { opacity: .4; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn { font: 600 14px var(--body); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  .btn.small { padding: 7px 10px; font-size: 13px; }
+  .btn.primary { background: var(--gold); color: #1a1408; border-color: var(--gold); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  details.help { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  details.help summary { cursor: pointer; font-weight: 600; }
+  details.help ul { margin: 8px 0 4px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; max-width: 65ch; }
+</style>
+<div class="wrap">
+  <h1>Orbforge</h1>
+  <main id="app"></main>
+</div>
+<script>
+/*LOGIC*/
+/*UI*/
+</script>

@@ -1,0 +1,490 @@
+<title>Orbforge Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* Layout: one phone-width column: enemies on top, the 6×7 factory, then tools. Placeholder art only; final look comes from the chosen art style. */
+  :root {
+    --bg: #15131c; --panel: #201d2a; --line: #3a3549; --fg: #ece6d6; --muted: #a59fb3;
+    --gold: #e0b55c; --good: #6fcf8a; --bad: #e0627a; --cell: #2a2636; --cell-alt: #2f2a3d;
+    --fire: #c4531f; --water: #2e6fa8; --earth: #7a6040; --steam: #8d98a8; --magma: #b83d12; --mud: #5a4630;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif; --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.45 var(--body); }
+  .wrap { max-width: 520px; margin: 0 auto; padding-block: 12px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #app { display: flex; flex-direction: column; gap: 10px; }
+  h1 { font: 700 22px/1.2 var(--display); letter-spacing: 0.05em; margin: 0 0 8px; }
+  h2 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: 0.03em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  .levels { display: flex; flex-direction: column; gap: 6px; }
+  .lvl { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: 600 15px var(--body); cursor: pointer; }
+  .lvl:disabled { opacity: .45; cursor: default; }
+  .lvl .num { font: 700 16px var(--display); color: var(--gold); text-align: center; }
+  .lvl .stars { color: var(--gold); letter-spacing: 2px; }
+  .locked-note { font-size: 13px; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; }
+  .lvlhead { display: flex; align-items: center; gap: 10px; }
+  .foes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .foe { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .foe.empty { border-style: dashed; justify-content: center; align-items: center; min-height: 70px; }
+  .foe.dead { opacity: .55; }
+  .foe.hitfx { animation: hit .4s ease-out; }
+  @keyframes hit { from { box-shadow: 0 0 0 3px var(--bad), 0 0 18px var(--bad); } to { box-shadow: none; } }
+  .foe-top { display: flex; gap: 8px; align-items: center; } .foe-ic { font-size: 30px; }
+  .hpbar { height: 8px; background: #3a2230; border-radius: 4px; overflow: hidden; } .hpfill { height: 100%; background: var(--bad); transition: width .3s; }
+  .hptext { font-size: 12px; font-variant-numeric: tabular-nums; } .tags { font-size: 11px; color: var(--muted); }
+  .msg { margin: 0; min-height: 2.9em; padding: 8px 10px; background: var(--panel); border-left: 3px solid var(--gold); border-radius: 4px; font-size: 14px; }
+  .result { padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+  .result.win { border-color: var(--good); } .result.lose { border-color: var(--bad); }
+  .result strong { font: 700 16px var(--display); }
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .cell { position: relative; aspect-ratio: 1; max-width: 100%; border: 0; border-radius: 5px; padding: 0; cursor: pointer; background: var(--cell); color: var(--fg); font-size: clamp(16px, 6vw, 28px); line-height: 1; display: grid; place-items: center; }
+  .cell:nth-child(odd) { background: var(--cell-alt); }
+  .cell.rock { background: #0f0e14 !important; cursor: default; font-size: 70%; opacity: .7; }
+  .cell.belt { background: #3b3424 !important; } .cell.belt .arrow { color: var(--gold); font-weight: 700; }
+  .cell.launch { background: #3a2a2a !important; } .cell.special { background: #2d3348 !important; }
+  .cell.well.el-fire { background: var(--fire) !important; } .cell.well.el-water { background: var(--water) !important; } .cell.well.el-earth { background: var(--earth) !important; }
+  .cell.target { box-shadow: inset 0 0 0 1px rgba(224,181,92,.55); }
+  .cell.flash { animation: flash .45s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px #fff, 0 0 16px var(--gold); } to { box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .cell.flash, .foe.hitfx { animation: none; } .hpfill { transition: none; } }
+  .orb { filter: drop-shadow(0 0 6px #fff8); }
+  .cell .badge { position: absolute; right: 2px; bottom: 1px; font: 600 10px/1 var(--body); color: var(--fg); background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 3px; }
+  .cell .badge.l { left: 2px; right: auto; } .cell .badge.top { top: 1px; bottom: auto; }
+  .cell .badge.gold { color: #1a1408; background: var(--gold); } .cell .badge.pow { color: #1a1408; background: #fff; font-size: 11px; }
+  .cell .badge.dir { color: var(--gold); } .cell .badge.hold { background: #4a3a6a; }
+  .cell:focus-visible, .btn:focus-visible, .item:focus-visible, .lvl:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+  .tools h3 { grid-column: 1 / -1; margin: 4px 0 0; font: 600 11px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); cursor: pointer; font-size: 11px; min-width: 0; }
+  .item .ic { font-size: 22px; line-height: 1.1; } .item .nm { text-align: center; overflow-wrap: anywhere; }
+  .item .ct { position: absolute; top: 3px; right: 5px; font: 600 11px var(--body); color: var(--gold); }
+  .item[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); background: #2c2636; }
+  .item:disabled { opacity: .4; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn { font: 600 14px var(--body); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  .btn.small { padding: 7px 10px; font-size: 13px; }
+  .btn.primary { background: var(--gold); color: #1a1408; border-color: var(--gold); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  details.help { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  details.help summary { cursor: pointer; font-weight: 600; }
+  details.help ul { margin: 8px 0 4px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; max-width: 65ch; }
+</style>
+<div class="wrap">
+  <h1>Orbforge</h1>
+  <main id="app"></main>
+</div>
+<script>
+// Orbforge prototype: rules and levels (no DOM), shared by the page and the Node checks.
+/* eslint-disable no-unused-vars */
+const OF_DIRS = { '↑': [-1, 0], '→': [0, 1], '↓': [1, 0], '←': [0, -1] };
+const OF_LEFT = { '↑': '←', '←': '↓', '↓': '→', '→': '↑' };
+const OF_RIGHT = { '↑': '→', '→': '↓', '↓': '←', '←': '↑' };
+const ofClone = (o) => JSON.parse(JSON.stringify(o));
+
+const ELEMENTS = {
+  fire:  { name: 'Fire', icon: '🔥', base: 2, tier: 1, info: 'Burns: 1 more damage on each of the next 3 beats.' },
+  water: { name: 'Water', icon: '💧', base: 1, tier: 1, info: 'Soaks: puts out fire shields (and any burning).' },
+  earth: { name: 'Earth', icon: '🪨', base: 3, tier: 1, info: 'Cracks armour: ignores it and breaks it for good.' },
+  steam: { name: 'Steam', icon: '☁️', base: 4, tier: 2, info: 'Scalds through armour and soaks.' },
+  magma: { name: 'Magma', icon: '🌋', base: 6, tier: 2, info: 'Burns hard: 2 more damage on each of the next 3 beats.' },
+  mud:   { name: 'Mud', icon: '🟫', base: 2, tier: 2, info: 'Cracks armour, soaks, and mires: every later hit does double.' },
+  // Locked in this prototype: shown in the recipe book as ???
+  eruption: { name: 'Eruption', icon: '🌠', base: 10, tier: 3, locked: true, info: 'Hits both enemies.' },
+  obsidian: { name: 'Obsidian', icon: '🖤', base: 12, tier: 3, locked: true, info: 'A huge armour-breaking hit.' },
+  quagmire: { name: 'Quagmire', icon: '🫧', base: 3, tier: 3, locked: true, info: 'Mires and soaks both enemies.' },
+  air: { name: 'Air', icon: '🌪️', base: 1, tier: 1, locked: true, info: 'The fourth element.' },
+};
+const RECIPES = {
+  'fire+water': 'steam', 'earth+fire': 'magma', 'earth+water': 'mud',
+  'magma+steam': 'eruption', 'magma+mud': 'obsidian', 'mud+steam': 'quagmire',
+};
+const TILES = {
+  belt:     { name: 'Belt', icon: '▫️', free: true, dir: true, info: 'Carries orbs one tile per beat in its arrow’s direction. Free and unlimited.' },
+  launcher: { name: 'Launcher', icon: '🏹', free: true, info: 'Fires every orb that enters it at its target. Tap it again to switch target. Free.' },
+  fuser:    { name: 'Fuser', icon: '⚗️', dir: true, info: 'Holds the first orb until a second arrives, then mixes them and sends the result out its arrow side. Same + same adds their power.' },
+  amp:      { name: 'Amplifier', icon: '➕', dir: true, info: '+3 power to every orb that passes.' },
+  lens:     { name: 'Prism Lens', icon: '🔍', dir: true, info: '×2 power. Multiply last for the biggest numbers.' },
+  splitter: { name: 'Splitter', icon: '🔀', dir: true, info: 'Sends orbs out to its left, then its right, alternating. Its arrow is the way it faces.' },
+  delay:    { name: 'Delay Coil', icon: '⏳', dir: true, info: 'Holds each orb for 2 beats before passing it on. Use it to change the order of hits.' },
+};
+const ENEMIES = {
+  goblin: { name: 'Goblin', icon: '👺' },
+  ogre: { name: 'Ogre', icon: '👹' },
+  troll: { name: 'Bridge Troll', icon: '🧌' },
+  knight: { name: 'Iron Knight', icon: '🤺' },
+  wyrm: { name: 'Ember Wyrm', icon: '🐉' },
+  golem: { name: 'Stone Golem', icon: '🗿' },
+};
+
+// map legend: '.' floor, '#' rock
+const LEVELS = [
+  { name: 'The Lone Goblin', par: 0, map: ['......', '......', '......', '......', '......', '......', '......'],
+    wells: [{ el: 'fire', n: 1 }], grant: {}, enemies: { L: { type: 'goblin', hp: 4 } },
+    teach: ['Place the 🔥 well: tap it in the Wells tray, then tap a tile. Its arrow is where orbs come out.',
+      'Lay Belts from the well, and end the line in a Launcher aimed at the goblin. Each tap on the next tile bends the previous belt toward it.',
+      'Press Play. Fire hits for 2 and burns for 3 more.'] },
+  { name: 'The Ogre at the Gate', par: 1, map: ['......', '......', '......', '#....#', '......', '......', '......'],
+    wells: [{ el: 'fire', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1 }, enemies: { L: { type: 'ogre', hp: 10 } },
+    teach: ['Fire and earth alone won’t bring down 10 HP. Mixed, they make 🌋 Magma: 6 damage and a fierce burn.',
+      'Point both wells into a Fuser. Whatever arrives second is mixed with the first, and Magma leaves through the Fuser’s arrow.',
+      'Special tiles like the Fuser are used up once an orb touches them. Ones you don’t use carry over to the next level.'] },
+  { name: 'Troll Bridge', par: 3, map: ['......', '......', '#....#', '......', '......', '......', '......'],
+    wells: [{ el: 'fire', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1, amp: 1, lens: 1 }, enemies: { L: { type: 'troll', hp: 22 } },
+    teach: ['The Amplifier adds 3, the Prism Lens doubles.', 'Order matters: add first, then multiply.',
+      'Retry as often as you like. Your layout stays put between tries.'] },
+  { name: 'Two Goblins', par: 1, map: ['......', '......', '......', '......', '##..##', '......', '......'],
+    wells: [{ el: 'fire', n: 2 }], grant: { splitter: 1 }, enemies: { L: { type: 'goblin', hp: 4 }, R: { type: 'goblin', hp: 4 } },
+    teach: ['This well holds 2 orbs and releases one every 2 beats.', 'A Splitter sends the first orb out its left and the next out its right.',
+      'Give each goblin its own Launcher. Tap a Launcher to switch it between the left and right enemy.'] },
+  { name: 'The Iron Knight', par: 3, map: ['......', '......', '......', '......', '......', '......', '......'],
+    wells: [{ el: 'fire', n: 1 }, { el: 'water', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1, lens: 1, delay: 1 },
+    enemies: { L: { type: 'knight', hp: 13, armor: 3 } },
+    teach: ['Armour 🛡️3 takes 3 off every hit. Earth and 🟫 Mud crack it for good.', 'Mud also mires: every hit after it does double.',
+      'So hit with Mud first, then something big. A Delay Coil holds an orb for 2 beats to get the order right.'] },
+  { name: 'Wyrm and Golem', par: 4, map: ['......', '......', '......', '......', '......', '......', '......'],
+    wells: [{ el: 'fire', n: 2 }, { el: 'water', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1, splitter: 1, lens: 1, amp: 1 },
+    enemies: { L: { type: 'wyrm', hp: 8, shield: true }, R: { type: 'golem', hp: 12, armor: 2 } },
+    teach: ['The Ember Wyrm’s fire shield blocks fire and magma until something soaks it.', 'The Golem has armour 🛡️2.',
+      'Everything you’ve learned, together. This is the last level of the prototype.'] },
+];
+
+function combine(a, b) {
+  if (a.el === b.el) return { el: a.el, pow: a.pow + b.pow, note: `${ELEMENTS[a.el].name} concentrates` };
+  const key = [a.el, b.el].sort().join('+');
+  const out = RECIPES[key];
+  if (!out) return { fizzle: `${ELEMENTS[a.el].name} and ${ELEMENTS[b.el].name} don’t mix. Fizzle!` };
+  if (ELEMENTS[out].locked) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
+  return { el: out, pow: ELEMENTS[out].base + (a.pow - ELEMENTS[a.el].base) + (b.pow - ELEMENTS[b.el].base), note: `${ELEMENTS[out].name}!` };
+}
+
+function makeEnemies(level) {
+  const out = {};
+  for (const [side, e] of Object.entries(level.enemies)) out[side] = { side, type: e.type, hp: e.hp, max: e.hp, armor: e.armor || 0, shield: !!e.shield, soaked: false, mired: false, burn: null };
+  return out;
+}
+
+function applyHit(en, orb, log) {
+  const name = ENEMIES[en.type].name, el = orb.el;
+  if (en.hp <= 0) { log.push(`The orb sails over the fallen ${name}.`); return; }
+  const fiery = el === 'fire' || el === 'magma';
+  if (en.shield && !en.soaked && fiery) { log.push(`The ${name}’s fire shield swallows the ${ELEMENTS[el].name}!`); return; }
+  let armor = en.armor;
+  if (el === 'earth' || el === 'mud') { if (en.armor) log.push(`${ELEMENTS[el].name} cracks the armour!`); en.armor = 0; armor = 0; }
+  if (el === 'steam') armor = 0;
+  let dmg = Math.max(0, orb.pow - armor);
+  if (en.mired) dmg *= 2;
+  en.hp = Math.max(0, en.hp - dmg);
+  log.push(`${ELEMENTS[el].icon} ${ELEMENTS[el].name} ${orb.pow} hits the ${name} for ${dmg}${en.mired ? ' (mired ×2)' : ''}${armor && dmg < orb.pow ? ` (armour −${armor})` : ''}.`);
+  if (el === 'water' || el === 'steam' || el === 'mud') { if (en.shield && !en.soaked) log.push('The fire shield hisses out!'); en.soaked = true; if (en.burn) { en.burn = null; log.push('The burning is put out.'); } }
+  if (el === 'mud') en.mired = true;
+  if (el === 'fire' && en.hp > 0) en.burn = { per: 1, left: 3 };
+  if (el === 'magma' && en.hp > 0) en.burn = { per: 2, left: 3 };
+}
+
+// layout: { "r,c": { t: 'belt'|'launcher'|'well'|<special>, dir, target, well } }
+function simulate(level, layout) {
+  const frames = [], enemies = makeEnemies(level);
+  const tiles = ofClone(layout);
+  const wells = Object.entries(tiles).filter(([, t]) => t.t === 'well').map(([k, t]) => ({ k, r: +k.split(',')[0], c: +k.split(',')[1], dir: t.dir, el: level.wells[t.well].el, left: level.wells[t.well].n }));
+  const used = new Set(), made = new Set();
+  let orbs = [], pending = [], log = [], nextId = 1;
+  const snap = (beat) => { frames.push({ beat, orbs: orbs.map((o) => ({ el: o.el, pow: o.pow, r: o.r, c: o.c })), enemies: ofClone(enemies), tiles: ofClone(tiles), log: log.join(' '), fx: [...fxNow] }); log = []; fxNow = []; };
+  let fxNow = [];
+  snap(-1);
+  for (let beat = 0; beat < 80; beat++) {
+    for (const w of wells) if (beat % 2 === 0 && w.left > 0) { w.left--; orbs.push({ id: nextId++, el: w.el, pow: ELEMENTS[w.el].base, r: w.r, c: w.c, dir: w.dir, wait: 0 }); }
+    for (const p of pending) orbs.push({ id: nextId++, ...p, wait: 0 });
+    pending = [];
+    for (const o of orbs) {
+      if (o.gone) continue;
+      if (o.wait > 0) { o.wait--; continue; }
+      const [dr, dc] = OF_DIRS[o.dir], r = o.r + dr, c = o.c + dc;
+      o.r = r; o.c = c;
+      const key = r + ',' + c, t = tiles[key];
+      if (r < 0 || r >= 7 || c < 0 || c >= 6) { o.gone = true; log.push(`${ELEMENTS[o.el].icon} rolls off the edge and is lost.`); continue; }
+      if (!t || t.t === 'well' || level.map[r][c] === '#') { o.gone = true; fxNow.push(key); log.push(`${ELEMENTS[o.el].icon} spills onto the ground and is lost.`); continue; }
+      if (t.t === 'belt') { o.dir = t.dir; continue; }
+      if (t.t === 'launcher') {
+        o.gone = true; fxNow.push(key);
+        const en = enemies[t.target];
+        if (!en) { log.push('The launcher fires at empty air.'); continue; }
+        applyHit(en, o, log); fxNow.push('enemy-' + t.target); continue;
+      }
+      used.add(key); fxNow.push(key);
+      if (t.t === 'amp') { o.pow += 3; o.dir = t.dir; }
+      else if (t.t === 'lens') { o.pow *= 2; o.dir = t.dir; }
+      else if (t.t === 'delay') { o.wait = 2; o.dir = t.dir; }
+      else if (t.t === 'splitter') { t.flip = !t.flip; o.dir = t.flip ? OF_LEFT[t.dir] : OF_RIGHT[t.dir]; }
+      else if (t.t === 'fuser') {
+        o.gone = true;
+        if (!t.held) { t.held = { el: o.el, pow: o.pow }; continue; }
+        const res = combine(t.held, o); t.held = null;
+        if (res.fizzle) { log.push(res.fizzle); continue; }
+        log.push(res.note); made.add(res.el);
+        pending.push({ el: res.el, pow: res.pow, r, c, dir: t.dir });
+      }
+    }
+    orbs = orbs.filter((o) => !o.gone);
+    for (const en of Object.values(enemies)) if (en.burn && en.hp > 0) {
+      en.hp = Math.max(0, en.hp - en.burn.per); log.push(`The ${ENEMIES[en.type].name} burns for ${en.burn.per}.`);
+      if (--en.burn.left <= 0) en.burn = null;
+      fxNow.push('enemy-' + en.side);
+    }
+    for (const en of Object.values(enemies)) if (en.hp <= 0 && !en.dead) { en.dead = true; en.burn = null; log.push(`The ${ENEMIES[en.type].name} falls!`); }
+    snap(beat);
+    const busy = orbs.length || pending.length || wells.some((w) => w.left > 0) || Object.values(enemies).some((e) => e.burn);
+    if (!busy) break;
+  }
+  const held = Object.values(tiles).filter((t) => t.held);
+  if (held.length) { log.push(`${held.length} orb${held.length > 1 ? 's' : ''} left waiting in a Fuser fizzle${held.length > 1 ? '' : 's'} out.`); snap(frames.length); }
+  const alive = Object.values(enemies).filter((e) => e.hp > 0);
+  const usedTiles = {}; for (const k of used) { const t = tiles[k]; usedTiles[t.t] = (usedTiles[t.t] || 0) + 1; }
+  return { frames, win: !alive.length, usedTiles, made: [...made], reason: alive.length ? alive.map((e) => `The ${ENEMIES[e.type].name} survives with ${e.hp} HP.`).join(' ') : 'Every enemy is down.' };
+}
+
+if (typeof module !== 'undefined') module.exports = { ELEMENTS, RECIPES, TILES, ENEMIES, LEVELS, simulate, combine };
+
+// Orbforge prototype: page. Level select, building, playback, carry-over tiles, recipe book.
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === false || v == null) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return e;
+}
+const btn = (label, onclick, opts = {}) => el('button', { class: 'btn' + (opts.primary ? ' primary' : '') + (opts.small ? ' small' : ''), onclick, disabled: opts.disabled }, label);
+const badge = (txt, cls = '') => `<span class="badge ${cls}">${txt}</span>`;
+const SPECIALS = ['fuser', 'amp', 'lens', 'splitter', 'delay'];
+const ROTATE = { '↑': '→', '→': '↓', '↓': '←', '←': '↑' };
+
+// ---------------------------------------------------------------- saved progress
+const SAVE_KEY = 'orbforge-proto-v1';
+let save = { best: {}, layouts: {}, known: [] };
+try { const raw = localStorage.getItem(SAVE_KEY); if (raw) save = { ...save, ...JSON.parse(raw) }; } catch (e) { /* storage unavailable */ }
+const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* storage unavailable */ } };
+// best[i] = { stars, left: {tile: n} } — tiles left over from the best clear of level i
+const sum = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
+function startInventory(i) {
+  const inv = {};
+  if (i > 0 && save.best[i - 1]) for (const [k, n] of Object.entries(save.best[i - 1].left)) inv[k] = (inv[k] || 0) + n;
+  for (const [k, n] of Object.entries(LEVELS[i].grant)) inv[k] = (inv[k] || 0) + n;
+  return inv;
+}
+const unlocked = (i) => i === 0 || !!save.best[i - 1];
+
+// ---------------------------------------------------------------- state
+const S = { view: 'levels', li: 0, layout: {}, tool: null, dir: '↑', target: 'L', last: null, msg: '', play: null, fi: 0, timer: null, result: null };
+const app = document.getElementById('app');
+const lvl = () => LEVELS[S.li];
+const keyOf = (r, c) => r + ',' + c;
+function inv() { return startInventory(S.li); }
+function avail(k) { return (inv()[k] || 0) - Object.values(S.layout).filter((t) => t.t === k).length; }
+
+function openLevel(i) {
+  clearTimeout(S.timer);
+  S.view = 'level'; S.li = i; S.layout = { ...(save.layouts[i] || {}) }; S.tool = null; S.last = null; S.play = null; S.result = null;
+  S.target = 'L';
+  S.msg = LEVELS[i].teach[0];
+  render();
+}
+function storeLayout() { save.layouts[S.li] = S.layout; persist(); }
+
+function tap(r, c) {
+  if (S.play) return;
+  const L = lvl(), k = keyOf(r, c), cur = S.layout[k];
+  if (L.map[r][c] === '#') { S.msg = 'Rock. Nothing can be built here.'; return render(); }
+  const tool = S.tool;
+  if (!tool) {
+    S.msg = cur ? (cur.t === 'well' ? `${ELEMENTS[L.wells[cur.well].el].name} well with ${L.wells[cur.well].n} orb${L.wells[cur.well].n > 1 ? 's' : ''}. It releases one every 2 beats out of its arrow.` : TILES[cur.t].info) : 'Pick something from the toolbox below, then tap here.';
+    return render();
+  }
+  if (tool === 'erase') { if (cur) { delete S.layout[k]; S.msg = 'Removed.'; } storeLayout(); return render(); }
+  // same tool on the same tile: rotate or retarget
+  const sameKind = cur && (cur.t === tool || (tool.startsWith('well') && cur.t === 'well' && 'well' + cur.well === tool));
+  if (sameKind) {
+    if (cur.t === 'launcher') cur.target = Object.keys(L.enemies).length > 1 ? (cur.target === 'L' ? 'R' : 'L') : 'L';
+    else cur.dir = ROTATE[cur.dir];
+    S.msg = cur.t === 'launcher' ? `Launcher now aims at the ${cur.target === 'L' ? 'left' : 'right'} enemy.` : `Turned to ${cur.dir}.`;
+    storeLayout(); return render();
+  }
+  let tile;
+  if (tool === 'belt') tile = { t: 'belt', dir: S.dir };
+  else if (tool === 'launcher') tile = { t: 'launcher', target: L.enemies[S.target] ? S.target : 'L' };
+  else if (tool.startsWith('well')) {
+    const wi = +tool.slice(4);
+    for (const [kk, t] of Object.entries(S.layout)) if (t.t === 'well' && t.well === wi) delete S.layout[kk];
+    tile = { t: 'well', well: wi, dir: S.dir };
+  } else {
+    if (avail(tool) <= 0 && !(cur && cur.t === tool)) { S.msg = `No ${TILES[tool].name}s left.`; return render(); }
+    tile = { t: tool, dir: S.dir };
+  }
+  // bend the previous belt/well/tile toward this one, so taps draw a line
+  if (S.last && S.layout[S.last] && S.last !== k) {
+    const [pr, pc] = S.last.split(',').map(Number), prev = S.layout[S.last];
+    if (Math.abs(pr - r) + Math.abs(pc - c) === 1 && prev.dir && prev.t !== 'splitter') {
+      const d = r < pr ? '↑' : r > pr ? '↓' : c < pc ? '←' : '→';
+      prev.dir = d; if (tile.dir && tool === 'belt') tile.dir = d;
+    }
+  }
+  S.layout[k] = tile; S.last = k;
+  S.msg = tool.startsWith('well') ? 'Well placed. Tap it again with the well selected to turn it.' : `${TILES[tile.t].name} placed. Tap it again to ${tile.t === 'launcher' ? 'switch target' : 'turn it'}.`;
+  if (SPECIALS.includes(tool) && avail(tool) <= 0) S.tool = null;
+  storeLayout(); render();
+}
+
+function play() {
+  const L = lvl();
+  const placedWells = Object.values(S.layout).filter((t) => t.t === 'well').length;
+  if (!placedWells) { S.msg = 'Place at least one well first.'; return render(); }
+  S.result = simulate(L, S.layout);
+  S.play = S.result.frames; S.fi = 0; S.tool = null;
+  for (const e of S.result.made) if (!save.known.includes(e)) save.known.push(e);
+  persist();
+  step();
+}
+function step() {
+  render();
+  if (S.fi >= S.play.length - 1) { S.timer = setTimeout(finish, 500); return; }
+  S.timer = setTimeout(() => { S.fi++; step(); }, 420);
+}
+function skip() { if (!S.play) return; clearTimeout(S.timer); S.fi = S.play.length - 1; finish(); }
+function finish() {
+  const r = S.result, L = lvl();
+  if (r.win) {
+    const used = sum(r.usedTiles);
+    const stars = used <= L.par ? 3 : used <= L.par + 1 ? 2 : 1;
+    const start = inv(), left = {};
+    for (const [k, n] of Object.entries(start)) { const rem = n - (r.usedTiles[k] || 0); if (rem > 0) left[k] = rem; }
+    const prev = save.best[S.li];
+    const better = !prev || stars > prev.stars || (stars === prev.stars && sum(left) > sum(prev.left));
+    if (better) save.best[S.li] = { stars, left, used };
+    r.stars = stars; r.used = used; r.left = left; r.better = better;
+    persist();
+  }
+  S.view = 'result'; render();
+}
+
+// ---------------------------------------------------------------- rendering
+function enemyCard(side, en, fx) {
+  if (!en) return el('div', { class: 'foe empty' }, el('span', { class: 'sub' }, side === 'L' ? 'Left: empty' : 'Right: empty'));
+  const d = ENEMIES[en.type], pct = Math.max(0, en.hp / en.max * 100);
+  const tags = [];
+  if (en.armor) tags.push(`🛡️${en.armor}`);
+  if (en.shield && !en.soaked) tags.push('🔥🛡️ fire shield');
+  if (en.soaked) tags.push('💧 soaked');
+  if (en.mired) tags.push('🟫 mired ×2');
+  if (en.burn) tags.push(`🔥 burning ${en.burn.per}×${en.burn.left}`);
+  return el('div', { class: 'foe' + (fx ? ' hitfx' : '') + (en.hp <= 0 ? ' dead' : '') },
+    el('div', { class: 'foe-top' }, el('span', { class: 'foe-ic' }, en.hp > 0 ? d.icon : '💀'), el('div', {}, el('b', {}, d.name), el('div', { class: 'sub' }, side === 'L' ? 'Left' : 'Right'))),
+    el('div', { class: 'hpbar' }, el('div', { class: 'hpfill', style: `width:${pct}%` })), el('div', { class: 'hptext' }, `${en.hp} / ${en.max} HP`),
+    tags.length ? el('div', { class: 'tags' }, tags.join(' · ')) : null);
+}
+function boardView(frame) {
+  const L = lvl(), tiles = frame ? frame.tiles : S.layout;
+  const b = el('div', { class: 'board' });
+  for (let r = 0; r < 7; r++) for (let c = 0; c < 6; c++) {
+    const k = keyOf(r, c), t = tiles[k];
+    let cls = 'cell' + (L.map[r][c] === '#' ? ' rock' : '');
+    let html = L.map[r][c] === '#' ? '🪨' : '';
+    if (t) {
+      if (t.t === 'belt') { cls += ' belt'; html = `<span class="arrow">${t.dir}</span>`; }
+      else if (t.t === 'launcher') { cls += ' launch'; html = '🏹' + badge(t.target === 'L' ? '◤L' : 'R◥', 'gold'); }
+      else if (t.t === 'well') { cls += ' well el-' + L.wells[t.well].el; html = ELEMENTS[L.wells[t.well].el].icon + badge(t.dir, 'dir') + badge('×' + L.wells[t.well].n, 'l top'); }
+      else { cls += ' special'; html = TILES[t.t].icon + badge(t.dir, 'dir'); if (t.held) html += badge(ELEMENTS[t.held.el].icon + t.held.pow, 'l top hold'); }
+    }
+    if (frame) {
+      const here = frame.orbs.filter((o) => o.r === r && o.c === c);
+      if (here.length) { const o = here[here.length - 1]; html = `<span class="orb el-${o.el}">${ELEMENTS[o.el].icon}</span>` + badge(o.pow, 'pow') + (t && t.t !== 'belt' ? badge(t.t === 'launcher' ? '🏹' : (TILES[t.t] || {}).icon || '', 'l top') : ''); }
+      if (frame.fx.includes(k)) cls += ' flash';
+    } else if (S.tool && S.tool !== 'erase' && L.map[r][c] !== '#') cls += ' target';
+    b.append(el('button', { class: cls, html, 'aria-label': `row ${r + 1} column ${c + 1}`, onclick: () => tap(r, c) }));
+  }
+  return b;
+}
+function toolbox() {
+  const L = lvl(), box = el('div', { class: 'tools' });
+  const tool = (id, icon, name, count, disabled) => el('button', { class: 'item', 'aria-pressed': S.tool === id ? 'true' : 'false', disabled,
+    onclick: () => { S.tool = S.tool === id ? null : id; S.last = null; S.msg = id === 'erase' ? 'Tap a tile to clear it.' : id.startsWith('well') ? 'Tap a tile to put the well there. Placing it again moves it.' : TILES[id].info; render(); } },
+  count != null ? el('span', { class: 'ct' }, count) : null, el('span', { class: 'ic' }, icon), el('span', { class: 'nm' }, name));
+  box.append(el('h3', {}, 'Wells (this stage only)'));
+  L.wells.forEach((w, i) => { const placed = Object.values(S.layout).some((t) => t.t === 'well' && t.well === i); box.append(tool('well' + i, ELEMENTS[w.el].icon, `${ELEMENTS[w.el].name} well${placed ? ' ✓' : ''}`, '×' + w.n)); });
+  box.append(el('h3', {}, 'Free'));
+  box.append(tool('belt', '⬆️', 'Belt'), tool('launcher', '🏹', 'Launcher'), tool('erase', '🧽', 'Clear'));
+  const inventory = inv();
+  const specials = SPECIALS.filter((k) => inventory[k]);
+  if (specials.length) { box.append(el('h3', {}, 'Your tiles (used up when an orb touches them; the rest carry over)')); for (const k of specials) box.append(tool(k, TILES[k].icon, TILES[k].name, '×' + avail(k), avail(k) <= 0)); }
+  return box;
+}
+function dirPicker() {
+  if (!S.tool || S.tool === 'erase') return null;
+  if (S.tool === 'launcher') {
+    const sides = Object.keys(lvl().enemies);
+    return el('div', { class: 'actions' }, el('span', { class: 'sub' }, 'Aim at:'), sides.map((s) => el('button', { class: 'btn small' + (S.target === s ? ' primary' : ''), onclick: () => { S.target = s; render(); } }, s === 'L' ? '◤ Left' : 'Right ◥')));
+  }
+  return el('div', { class: 'actions' }, el('span', { class: 'sub' }, 'Facing:'), ['↑', '→', '↓', '←'].map((d) => el('button', { class: 'btn small' + (S.dir === d ? ' primary' : ''), onclick: () => { S.dir = d; render(); } }, d)));
+}
+function recipeBook() {
+  const row = (a, b, out) => {
+    const known = save.known.includes(out), locked = ELEMENTS[out].locked;
+    return el('li', {}, `${ELEMENTS[a].icon} + ${ELEMENTS[b].icon} → `, locked ? el('span', { class: 'sub' }, '🔒 unlocks later') : known ? el('span', {}, `${ELEMENTS[out].icon} ${ELEMENTS[out].name}: ${ELEMENTS[out].info}`) : el('span', { class: 'sub' }, '??? (mix it to find out)'));
+  };
+  return el('details', { class: 'help' }, el('summary', {}, `Recipe book (${save.known.length} found)`),
+    el('ul', {},
+      ['fire', 'water', 'earth'].map((e) => el('li', {}, `${ELEMENTS[e].icon} ${ELEMENTS[e].name} (${ELEMENTS[e].base}): ${ELEMENTS[e].info}`)),
+      el('li', {}, '🌪️ The fourth element: 🔒 unlocks in a later chapter'),
+      el('li', {}, 'Same + same: concentrates, adding both orbs’ power.'),
+      row('fire', 'water', 'steam'), row('fire', 'earth', 'magma'), row('water', 'earth', 'mud'),
+      row('magma', 'steam', 'eruption'), row('magma', 'mud', 'obsidian'), row('mud', 'steam', 'quagmire')));
+}
+
+function render() {
+  const L = lvl();
+  if (S.view === 'levels') {
+    app.replaceChildren(
+      el('p', { class: 'sub' }, 'Build a little orb factory, press Play once, and see if it brings the enemy down. Retry as often as you like, even after a win. Unused tiles carry over to the next level.'),
+      el('div', { class: 'levels' }, LEVELS.map((lv, i) => {
+        const b = save.best[i], open = unlocked(i);
+        return el('button', { class: 'lvl', disabled: !open, onclick: () => openLevel(i) },
+          el('span', { class: 'num' }, i + 1), el('span', { class: 'lname' }, open ? lv.name : 'Locked'),
+          el('span', { class: 'stars' }, b ? '★'.repeat(b.stars) + '☆'.repeat(3 - b.stars) : open ? 'new' : '🔒'));
+      })),
+      el('div', { class: 'locked-note' }, save.best[5] ? '✨ Level 6 cleared. In the full game this unlocks tertiary recipes; the fourth element 🌪️ arrives in chapter 2.' : 'Tertiary recipes unlock after level 6. The fourth element 🌪️ comes in a later chapter.'),
+      recipeBook(),
+      btn('Reset all progress', () => { save = { best: {}, layouts: {}, known: [] }; persist(); render(); }, { small: true }));
+    return;
+  }
+  const frame = S.play ? S.play[S.fi] : null;
+  const enemies = frame ? frame.enemies : makeEnemies(L);
+  const fx = frame ? frame.fx : [];
+  const head = el('div', { class: 'lvlhead' }, btn('← Levels', () => { clearTimeout(S.timer); S.view = 'levels'; S.play = null; render(); }, { small: true }),
+    el('h2', {}, `${S.li + 1}. ${L.name}`));
+  const foes = el('div', { class: 'foes' }, enemyCard('L', enemies.L, fx.includes('enemy-L')), enemyCard('R', enemies.R, fx.includes('enemy-R')));
+  let top;
+  if (S.view === 'result') {
+    const r = S.result;
+    top = r.win
+      ? el('div', { class: 'result win' }, el('strong', {}, `Victory ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}`),
+        el('span', {}, `Tiles used: ${r.used} (par ${L.par}). ${sum(r.left) ? `Carrying over: ${Object.entries(r.left).map(([k, n]) => `${TILES[k].icon}×${n}`).join(' ')}.` : 'Nothing left to carry over.'}${r.better ? '' : ' (Your earlier result was better, so that one counts.)'}`),
+        el('div', { class: 'actions' }, S.li < LEVELS.length - 1 ? btn('Next level', () => openLevel(S.li + 1), { primary: true }) : btn('Back to levels', () => { S.view = 'levels'; S.play = null; render(); }, { primary: true }),
+          btn('Retry', () => { S.view = 'level'; S.play = null; render(); })))
+      : el('div', { class: 'result lose' }, el('strong', {}, 'Not this time'), el('span', {}, r.reason + ' Your layout is still here. Adjust it and try again.'),
+        el('div', { class: 'actions' }, btn('Retry', () => { S.view = 'level'; S.play = null; render(); }, { primary: true }), btn('Watch again', () => { S.view = 'level'; S.fi = 0; step(); })));
+  } else top = el('p', { class: 'msg', 'aria-live': 'polite' }, frame ? (frame.log || `Beat ${frame.beat + 1}`) : S.msg);
+  const teach = S.play ? null : el('details', { class: 'help', open: S.li < 5 && !save.best[S.li] }, el('summary', {}, 'How this level works'), el('ul', {}, L.teach.map((t) => el('li', {}, t))));
+  app.replaceChildren(...[head, foes, top, boardView(frame),
+    S.play ? (S.view === 'result' ? null : el('div', { class: 'actions' }, el('span', { class: 'sub' }, `Beat ${Math.max(0, frame.beat + 1)}`), btn('Skip to the end', skip, { small: true })))
+      : el('div', { class: 'actions' }, btn('▶ Play', play, { primary: true }), btn('Clear board', () => { S.layout = {}; storeLayout(); S.msg = 'Board cleared.'; render(); }, { small: true })),
+    S.play ? null : dirPicker(), S.play ? null : toolbox(), teach, recipeBook()].filter(Boolean));
+}
+render();
+
+</script>
