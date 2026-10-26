@@ -1,0 +1,248 @@
+<title>Orbforge Art Directions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;600&display=swap">
+<style>
+  /* Layout: a single column of five style cards, each a live 3D diorama above its notes. Dark gallery so every style's colours read true. */
+  :root {
+    --bg: #121117; --card: #1c1a24; --line: #34303f; --fg: #ece6d6; --muted: #a39db0; --gold: #e0b55c;
+    --display: "Cinzel", Georgia, serif; --body: "Inter", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.5 var(--body); }
+  .wrap { max-width: 760px; margin: 0 auto; padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+  h1 { font: 700 24px/1.2 var(--display); letter-spacing: .04em; margin: 0; text-wrap: balance; }
+  .intro { color: var(--muted); margin: 6px 0 0; max-width: 65ch; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .stage { position: relative; aspect-ratio: 4 / 3; width: 100%; max-width: 100%; background: #000; }
+  .stage canvas { display: block; width: 100% !important; height: 100% !important; }
+  .stage .tag { position: absolute; left: 10px; top: 10px; font: 700 12px var(--display); letter-spacing: .08em; background: rgba(0,0,0,.55); color: #fff; padding: 4px 8px; border-radius: 4px; }
+  .notes { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .notes h2 { font: 700 19px/1.2 var(--display); margin: 0; letter-spacing: .03em; }
+  .mix { color: var(--gold); font-size: 13px; margin: 0; }
+  .notes p { margin: 0; max-width: 65ch; }
+  .swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+  .swatches span { width: 26px; height: 26px; border-radius: 4px; border: 1px solid rgba(255,255,255,.15); }
+  .pc { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; }
+  .pc > div { min-width: 0; }
+  .pc b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .pc ul { margin: 0; padding-left: 16px; }
+  @media (max-width: 480px) { .pc { grid-template-columns: 1fr; } }
+  .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; padding: 16px; text-align: center; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Orbforge Art Directions</h1>
+    <p class="intro">Five takes on the same scene: a floating castle-yard island with three elemental wells, a conveyor, a fuser cauldron and a ballista firing magma at an ogre and a goblin. Each blends the clean low-poly calm of Tower Dominion with the chunky, toy-like charm of Monster Expedition, pushed in a different direction. Drag across a scene to turn it.</p>
+  </header>
+  <div id="cards"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const STYLES = [
+  {
+    id: 'storybook', name: 'Storybook Isles', mix: 'Mostly Monster Expedition, with Tower Dominion’s soft light',
+    blurb: 'Chunky floating islands with cliff edges, sunny pastels and toon shading. Characters are round and friendly, even the villains. It reads instantly on a small screen.',
+    pros: ['Very readable on phones', 'Cheap to model: simple shapes', 'Broad, friendly appeal'], cons: ['Less "epic" for bosses', 'Close to many cosy mobile games'],
+    bg: 0xa9d8f0, fogNear: 30, mat: 'toon', outline: false, bloom: null, bokeh: false,
+    sun: [0xfff3dc, 2.6], amb: [0xcfe6ff, 1.1], exposure: 1.0,
+    pal: { grass: 0x8fd66b, grass2: 0x7fcb5e, cliff: 0xc98a52, cliff2: 0xa86e3e, stone: 0xd9d2c3, stoneDark: 0xb3aa98, wood: 0xb5763d, belt: 0x5f5266, mark: 0xffd166, roof: 0xe0574f, leaf: 0x4fbf6a, trunk: 0x8a5a33, goblin: 0x7ccf4a, ogre: 0xb07be0, cloth: 0xf2e3c6, fire: 0xff7a2f, water: 0x3fa9ff, earth: 0xc49a5a, magma: 0xff5a1f, glow: 0.6 },
+  },
+  {
+    id: 'kingdom', name: 'Quiet Kingdom', mix: 'Mostly Tower Dominion, with Monster Expedition’s chunky props',
+    blurb: 'Muted sage greens and warm limestone, gentle shading and a little bloom on the magic. Calm and elegant, the closest to Tower Dominion. The orbs are the only saturated colour, so they lead the eye.',
+    pros: ['Elegant, premium feel', 'Orbs and effects stand out', 'Ages well'], cons: ['Can look plain in screenshots', 'Needs good lighting to shine'],
+    bg: 0xc9d3cf, fogNear: 22, mat: 'standard', outline: false, bloom: [0.55, 0.5, 0.82], bokeh: false,
+    sun: [0xfff1de, 2.2], amb: [0xdfe8ec, 0.9], exposure: 1.0,
+    pal: { grass: 0x9bb38a, grass2: 0x90a981, cliff: 0x8f8574, cliff2: 0x7a7162, stone: 0xd6cdbb, stoneDark: 0xb7ad99, wood: 0x8c6a4a, belt: 0x4e4a52, mark: 0xd9b46a, roof: 0x5f7387, leaf: 0x6e8f62, trunk: 0x6b5442, goblin: 0x8fae6a, ogre: 0x8d7b9c, cloth: 0xe3dccb, fire: 0xff8a3d, water: 0x58b4ff, earth: 0xd1a96a, magma: 0xff6a2a, glow: 2.2 },
+  },
+  {
+    id: 'tabletop', name: 'Painted Tabletop', mix: 'Monster Expedition’s toys on a Tower Dominion war table',
+    blurb: 'The board is a hand-painted miniature on a wooden war table, with a tilt-shift blur so it looks small and precious. Saturated "painted lead" colours and warm lamplight. Every level feels like a set piece.',
+    pros: ['Distinctive and memorable', 'Fits a puzzle game played on a board', 'Easy theme for menus and UI'], cons: ['Blur effect costs performance', 'Tilt-shift must stay subtle for readability'],
+    bg: 0x2a1d14, fogNear: 40, mat: 'standard', outline: false, bloom: [0.35, 0.4, 0.9], bokeh: true,
+    sun: [0xffd6a0, 2.8], amb: [0x8a6a50, 0.7], exposure: 1.05,
+    pal: { grass: 0x5fa04a, grass2: 0x55953f, cliff: 0x6b4426, cliff2: 0x5a381e, stone: 0xcfc4a8, stoneDark: 0xa99d82, wood: 0xa0602a, belt: 0x3e3440, mark: 0xf2c14e, roof: 0xb23a2e, leaf: 0x3f8a3a, trunk: 0x6e4524, goblin: 0x6fbf3a, ogre: 0x9a5fc4, cloth: 0xeadcb8, fire: 0xff7a1f, water: 0x2f8cff, earth: 0xc8913f, magma: 0xff4d12, glow: 1.4 },
+  },
+  {
+    id: 'twilight', name: 'Twilight Arcana', mix: 'Tower Dominion’s clean forms at dusk, with Monster Expedition shapes',
+    blurb: 'The same island at dusk: deep blues and violets, warm lantern light, and glowing orbs, belts and runes that bloom. The alchemy is the star, and the light show grows with the combo.',
+    pros: ['Magic effects look spectacular', 'Strong mood and identity', 'Glow makes orb paths easy to follow'], cons: ['Dark scenes are harder to read outdoors', 'Bloom costs a little performance'],
+    bg: 0x1a1d3a, fogNear: 18, mat: 'standard', outline: false, bloom: [0.8, 0.5, 0.62], bokeh: false,
+    sun: [0x8fa4ff, 1.1], amb: [0x4a4c8a, 0.9], exposure: 1.0,
+    pal: { grass: 0x3f5a6e, grass2: 0x38526a, cliff: 0x2b2a45, cliff2: 0x24223b, stone: 0x7d7fa6, stoneDark: 0x63658a, wood: 0x5b4636, belt: 0x2a2440, mark: 0x9be7ff, roof: 0x4b3a7a, leaf: 0x2f5a5a, trunk: 0x3d3030, goblin: 0x6fa36a, ogre: 0x7a5aa8, cloth: 0xa9a3c9, fire: 0xff8a2a, water: 0x4fc3ff, earth: 0xffc860, magma: 0xff5a1f, glow: 3.2 },
+  },
+  {
+    id: 'heraldic', name: 'Heraldic Ink', mix: 'Monster Expedition’s cartoon outlines on a medieval manuscript',
+    blurb: 'Toon shading with ink outlines and a tight heraldic palette: parchment, crimson, royal blue, gold. It looks like an illuminated manuscript come to life, and it stays crisp at any size.',
+    pros: ['Very crisp and readable', 'Strongly medieval', 'Outlines hide simple models'], cons: ['Outlines add work to every model', 'A narrow palette limits variety'],
+    bg: 0xeadfc4, fogNear: 60, mat: 'toon', outline: true, bloom: null, bokeh: false,
+    sun: [0xffffff, 2.4], amb: [0xf3e7cf, 1.2], exposure: 1.0,
+    pal: { grass: 0xc9c98a, grass2: 0xbfbf7e, cliff: 0xb8865a, cliff2: 0xa07048, stone: 0xefe6d0, stoneDark: 0xd6c9aa, wood: 0x9c5b2e, belt: 0x3b3a5a, mark: 0xd8a72f, roof: 0xb3262d, leaf: 0x6f8f3a, trunk: 0x7a4a26, goblin: 0x8fb04a, ogre: 0x3c5aa8, cloth: 0xf5ecd6, fire: 0xe8452c, water: 0x2f6fd8, earth: 0xc7922f, magma: 0xd83a1c, glow: 0.4 },
+  },
+];
+
+const toonRamp = (() => { const d = new Uint8Array([90, 170, 255]); const t = new THREE.DataTexture(d, 3, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
+
+function buildScene(style) {
+  const P = style.pal, scene = new THREE.Scene(), root = new THREE.Group();
+  scene.background = new THREE.Color(style.bg);
+  scene.fog = new THREE.Fog(style.bg, style.fogNear, style.fogNear + 30);
+  scene.add(root);
+  const mat = (color, emissive = 0) => {
+    const o = { color };
+    if (emissive) { o.emissive = color; o.emissiveIntensity = emissive; }
+    if (style.mat === 'toon') return new THREE.MeshToonMaterial({ ...o, gradientMap: toonRamp });
+    return new THREE.MeshStandardMaterial({ ...o, roughness: 0.85, metalness: 0, flatShading: true });
+  };
+  const outlineMat = new THREE.MeshBasicMaterial({ color: 0x1e1712, side: THREE.BackSide });
+  const add = (geo, color, x, y, z, opts = {}) => {
+    const m = new THREE.Mesh(geo, mat(color, opts.glow || 0));
+    m.position.set(x, y, z);
+    if (opts.rot) m.rotation.set(...opts.rot);
+    if (opts.scale) m.scale.set(...opts.scale);
+    m.castShadow = opts.shadow !== false; m.receiveShadow = true;
+    (opts.parent || root).add(m);
+    if (style.outline && !opts.noOutline) { const o = new THREE.Mesh(geo, outlineMat); o.scale.setScalar(opts.outlineScale || 1.1); m.add(o); }
+    return m;
+  };
+  // island: 7 x 6 tiles with a cliff underneath
+  const W = 7, D = 6;
+  add(new THREE.BoxGeometry(W + 0.2, 1.4, D + 0.2), P.cliff, 0, -0.85, 0, { noOutline: true });
+  add(new THREE.BoxGeometry(W - 0.6, 1.0, D - 0.6), P.cliff2, 0, -1.9, 0, { noOutline: true });
+  for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) add(new THREE.BoxGeometry(0.96, 0.3, 0.96), (x + z) % 2 ? P.grass : P.grass2, x - W / 2 + 0.5, -0.05, z - D / 2 + 0.5, { noOutline: true, shadow: false });
+  const tx = (x) => x - W / 2 + 0.5, tz = (z) => z - D / 2 + 0.5;
+  // conveyor belt path from the wells (bottom) up to the fuser and ballista
+  const path = [[1, 5], [1, 4], [2, 4], [3, 4], [3, 3], [3, 2]];
+  for (const [x, z] of [...path, [5, 5], [5, 4], [4, 4]]) {
+    add(new THREE.BoxGeometry(0.86, 0.1, 0.86), P.belt, tx(x), 0.15, tz(z), { shadow: false });
+    add(new THREE.BoxGeometry(0.5, 0.03, 0.12), P.mark, tx(x), 0.22, tz(z), { noOutline: true, shadow: false, glow: style.id === 'twilight' ? 1.5 : 0 });
+  }
+  // three elemental wells
+  for (const [x, z, el] of [[1, 5, 'fire'], [3, 5, 'water'], [5, 5, 'earth']]) {
+    add(new THREE.CylinderGeometry(0.38, 0.44, 0.45, 8), P.stone, tx(x), 0.32, tz(z));
+    add(new THREE.SphereGeometry(0.22, 16, 12), P[el], tx(x), 0.75, tz(z), { glow: P.glow, noOutline: true });
+  }
+  // fuser cauldron
+  add(new THREE.CylinderGeometry(0.42, 0.32, 0.5, 10), 0x3a3540, tx(3), 0.4, tz(3) - 0.0);
+  add(new THREE.TorusGeometry(0.4, 0.07, 6, 14), P.stoneDark, tx(3), 0.66, tz(3), { rot: [Math.PI / 2, 0, 0] });
+  add(new THREE.CylinderGeometry(0.34, 0.34, 0.04, 14), P.magma, tx(3), 0.63, tz(3), { glow: P.glow, noOutline: true });
+  // ballista
+  const bx = tx(3), bz = tz(1);
+  add(new THREE.BoxGeometry(0.7, 0.25, 0.7), P.wood, bx, 0.25, bz);
+  add(new THREE.BoxGeometry(0.16, 0.16, 0.9), P.wood, bx, 0.48, bz - 0.1, { rot: [-0.35, 0, 0] });
+  add(new THREE.BoxGeometry(1.0, 0.08, 0.08), P.wood, bx, 0.56, bz - 0.35, { rot: [0, 0, 0] });
+  // magma orb in flight toward the ogre
+  add(new THREE.SphereGeometry(0.2, 16, 12), P.magma, tx(3.3), 1.6, tz(-0.6), { glow: P.glow * 1.3, noOutline: true });
+  add(new THREE.SphereGeometry(0.12, 12, 8), P.fire, tx(3.15), 1.35, tz(-0.1), { glow: P.glow, noOutline: true });
+  add(new THREE.SphereGeometry(0.07, 8, 6), P.fire, tx(3.05), 1.1, tz(0.35), { glow: P.glow, noOutline: true });
+  // castle corner tower and wall
+  add(new THREE.CylinderGeometry(0.55, 0.62, 1.6, 10), P.stone, tx(6), 0.8, tz(5));
+  add(new THREE.ConeGeometry(0.72, 0.9, 10), P.roof, tx(6), 2.05, tz(5));
+  add(new THREE.BoxGeometry(0.4, 0.7, 2.6), P.stoneDark, tx(6), 0.45, tz(3.1));
+  for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(0.42, 0.22, 0.32), P.stoneDark, tx(6), 0.9, tz(2.1) + i * 0.66);
+  // trees and rocks
+  for (const [x, z, s] of [[0, 0, 1], [0.1, 1.3, 0.8], [6, 0, 0.9], [5.2, 0.2, 0.7]]) {
+    add(new THREE.CylinderGeometry(0.08, 0.1, 0.4, 6), P.trunk, tx(x), 0.32, tz(z));
+    add(new THREE.ConeGeometry(0.42 * s, 1.0 * s, 7), P.leaf, tx(x), 0.55 + 0.5 * s, tz(z));
+  }
+  add(new THREE.DodecahedronGeometry(0.28), P.stoneDark, tx(0), 0.25, tz(3.5));
+  // enemy arena strip beyond the island edge
+  add(new THREE.BoxGeometry(W - 1, 0.4, 1.6), P.cliff, 0, -0.2, -D / 2 - 1.2, { noOutline: true });
+  add(new THREE.BoxGeometry(W - 1.2, 0.12, 1.4), P.grass2, 0, 0.06, -D / 2 - 1.2, { noOutline: true, shadow: false });
+  // ogre (right)
+  const ogre = new THREE.Group(); ogre.position.set(1.4, 0.12, -D / 2 - 1.2); root.add(ogre);
+  add(new THREE.CapsuleGeometry(0.42, 0.55, 4, 10), P.ogre, 0, 0.75, 0, { parent: ogre });
+  add(new THREE.SphereGeometry(0.3, 14, 10), P.ogre, 0, 1.5, 0.05, { parent: ogre });
+  add(new THREE.CylinderGeometry(0.44, 0.46, 0.18, 10), P.cloth, 0, 0.55, 0, { parent: ogre });
+  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.06, 8, 6), 0x111111, 0.11 * s, 1.55, 0.3, { parent: ogre, noOutline: true });
+  add(new THREE.CylinderGeometry(0.07, 0.12, 0.9, 6), P.wood, 0.55, 0.85, 0.15, { parent: ogre, rot: [0.3, 0, -0.4] });
+  // goblin (left)
+  const gob = new THREE.Group(); gob.position.set(-1.6, 0.12, -D / 2 - 1.1); root.add(gob);
+  add(new THREE.CapsuleGeometry(0.22, 0.3, 4, 10), P.goblin, 0, 0.45, 0, { parent: gob });
+  add(new THREE.SphereGeometry(0.22, 14, 10), P.goblin, 0, 0.95, 0.03, { parent: gob });
+  for (const s of [-1, 1]) {
+    add(new THREE.ConeGeometry(0.07, 0.32, 6), P.goblin, 0.24 * s, 1.02, 0, { parent: gob, rot: [0, 0, -1.3 * s] });
+    add(new THREE.SphereGeometry(0.04, 8, 6), 0x111111, 0.08 * s, 0.98, 0.2, { parent: gob, noOutline: true });
+  }
+  add(new THREE.ConeGeometry(0.2, 0.25, 8), P.roof, 0, 1.2, 0, { parent: gob });
+  // HP bars as simple floating slabs
+  for (const [g, w] of [[ogre, 0.9], [gob, 0.6]]) {
+    add(new THREE.BoxGeometry(w, 0.08, 0.04), 0x2a1a1a, 0, g === ogre ? 2.05 : 1.5, 0, { parent: g, noOutline: true, shadow: false });
+    add(new THREE.BoxGeometry(w * 0.7, 0.09, 0.05), 0xe0405a, -w * 0.15, g === ogre ? 2.05 : 1.5, 0.01, { parent: g, noOutline: true, shadow: false, glow: 0.3 });
+  }
+  // lights
+  const sun = new THREE.DirectionalLight(style.sun[0], style.sun[1]);
+  sun.position.set(6, 12, 7); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 40 });
+  sun.shadow.bias = -0.0005; scene.add(sun);
+  scene.add(new THREE.HemisphereLight(style.amb[0], style.bg, style.amb[1]));
+  if (style.id === 'twilight') { const lamp = new THREE.PointLight(0xffb060, 6, 6); lamp.position.set(tx(6), 2.2, tz(4)); scene.add(lamp); const lamp2 = new THREE.PointLight(0xff7a3a, 4, 5); lamp2.position.set(tx(3), 1.4, tz(3)); scene.add(lamp2); }
+  if (style.id === 'tabletop') { const table = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 30), mat(0x5a3a22)); table.position.y = -2.7; table.receiveShadow = true; scene.add(table); }
+  return { scene, root };
+}
+
+function makeCard(style) {
+  const swatches = ['grass', 'stone', 'roof', 'fire', 'water', 'earth', 'ogre', 'goblin'].map((k) => `<span style="background:#${style.pal[k].toString(16).padStart(6, '0')}" title="${k}"></span>`).join('');
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.innerHTML = `<div class="stage"><span class="tag">${style.name}</span></div>
+    <div class="notes"><h2>${style.name}</h2><p class="mix">${style.mix}</p><p>${style.blurb}</p>
+    <div class="swatches">${swatches}</div>
+    <div class="pc"><div><b>Strengths</b><ul>${style.pros.map((x) => `<li>${x}</li>`).join('')}</ul></div><div><b>Watch out for</b><ul>${style.cons.map((x) => `<li>${x}</li>`).join('')}</ul></div></div></div>`;
+  document.getElementById('cards').append(card);
+  const stage = card.querySelector('.stage');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+  catch (e) { stage.insertAdjacentHTML('beforeend', '<div class="fallback">3D preview unavailable on this device.</div>'); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = style.exposure;
+  stage.prepend(renderer.domElement);
+  const { scene, root } = buildScene(style);
+  const camera = new THREE.PerspectiveCamera(32, 4 / 3, 0.5, 100);
+  camera.position.set(0, 12.5, 10.5); camera.lookAt(0, -0.2, -1.0);
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  if (style.bloom) composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 384), ...style.bloom));
+  if (style.bokeh) composer.addPass(new BokehPass(scene, camera, { focus: 15.2, aperture: 0.0016, maxblur: 0.008 }));
+  composer.addPass(new OutputPass());
+  const resize = () => { const w = stage.clientWidth, h = Math.round(w * 3 / 4); renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+  resize(); new ResizeObserver(resize).observe(stage);
+  let angle = -0.18, target = -0.18, visible = false, dragging = null, t0 = performance.now();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const draw = () => { root.rotation.y = angle; composer.render(); };
+  stage.addEventListener('pointerdown', (e) => { dragging = e.clientX; stage.setPointerCapture(e.pointerId); });
+  stage.addEventListener('pointermove', (e) => { if (dragging == null) return; target += (e.clientX - dragging) * 0.008; target = Math.max(-0.9, Math.min(0.9, target)); dragging = e.clientX; if (!visible || reduce) { angle = target; draw(); } });
+  stage.addEventListener('pointerup', () => { dragging = null; });
+  stage.style.touchAction = 'pan-y';
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting; }, { threshold: 0.1 }).observe(stage);
+  const loop = (now) => {
+    requestAnimationFrame(loop);
+    if (!visible) return;
+    if (!reduce && dragging == null) target = -0.18 + Math.sin((now - t0) / 2600) * 0.22;
+    angle += (target - angle) * 0.08;
+    draw();
+  };
+  draw();
+  requestAnimationFrame(loop);
+}
+STYLES.forEach(makeCard);
+</script>
