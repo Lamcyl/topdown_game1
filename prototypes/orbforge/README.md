@@ -6,6 +6,15 @@ Placeholder-art prototype of the conveyor-alchemy idea: place orb wells, belts, 
 - Start with 3 elements (fire, water, earth) and their secondary mixes (steam, magma, mud). Tertiary recipes and the fourth element (air) are shown as locked.
 - Retry any level any time. Special tiles touched by an orb are used up; unused ones carry to the next level (the best clear of each level counts). Orbs and wells belong to the stage.
 
+Sandbox (on the level list): every tile unlimited, wells of any element including Air, every recipe unlocked, and training dummies (plain, armoured, fire-warded) on either side. After each play it shows damage totals and a full battle log.
+
+Elements and recipes:
+- Primary: Fire, Water, Earth; Air (moves 2 tiles per beat) unlocks later.
+- Secondary: Steam, Magma, Mud; Lightning, Ice, Dust from Air.
+- Tertiary: Eruption, Obsidian, Quagmire, Storm.
+
+Visual decisions so far: Quiet Kingdom art style; primary orbs are plain Glowing Cores; secondary orbs get the Elemental Aura effect; tertiary orbs get bigger effects (still to design).
+
 Files:
 - `logic.js`: rules and levels, with no page code, so the checks run in Node.
 - `ui.js` and `page.html`: the page.

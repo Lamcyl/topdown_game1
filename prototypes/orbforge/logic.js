@@ -12,15 +12,20 @@ const ELEMENTS = {
   steam: { name: 'Steam', icon: '☁️', base: 4, tier: 2, info: 'Scalds through armour and soaks.' },
   magma: { name: 'Magma', icon: '🌋', base: 6, tier: 2, info: 'Burns hard: 2 more damage on each of the next 3 beats.' },
   mud:   { name: 'Mud', icon: '🟫', base: 2, tier: 2, info: 'Cracks armour, soaks, and mires: every later hit does double.' },
-  // Locked in this prototype: shown in the recipe book as ???
-  eruption: { name: 'Eruption', icon: '🌠', base: 10, tier: 3, locked: true, info: 'Hits both enemies.' },
-  obsidian: { name: 'Obsidian', icon: '🖤', base: 12, tier: 3, locked: true, info: 'A huge armour-breaking hit.' },
-  quagmire: { name: 'Quagmire', icon: '🫧', base: 3, tier: 3, locked: true, info: 'Mires and soaks both enemies.' },
-  air: { name: 'Air', icon: '🌪️', base: 1, tier: 1, locked: true, info: 'The fourth element.' },
+  // Locked in the campaign levels (unlocked in the Sandbox): the fourth element, its mixes, and tertiary recipes.
+  air: { name: 'Air', icon: '🌪️', base: 1, tier: 1, locked: true, info: 'Swift: moves 2 tiles per beat, so it arrives first.' },
+  lightning: { name: 'Lightning', icon: '⚡', base: 4, tier: 2, locked: true, info: 'Double damage against a soaked enemy.' },
+  ice: { name: 'Ice', icon: '❄️', base: 3, tier: 2, locked: true, info: 'Makes the enemy brittle: its next hit does double.' },
+  dust: { name: 'Dust', icon: '🌫️', base: 2, tier: 2, locked: true, info: 'Sandblasts away armour and fire shields.' },
+  eruption: { name: 'Eruption', icon: '🌠', base: 10, tier: 3, locked: true, info: 'Hits both enemies and sets them both burning (2 per beat for 3 beats).' },
+  obsidian: { name: 'Obsidian', icon: '🖤', base: 14, tier: 3, locked: true, info: 'A huge hit that cracks armour.' },
+  quagmire: { name: 'Quagmire', icon: '🫧', base: 3, tier: 3, locked: true, info: 'Hits both enemies, soaking and miring them both.' },
+  storm: { name: 'Storm', icon: '⛈️', base: 9, tier: 3, locked: true, info: 'Double damage against a soaked enemy, and leaves it brittle.' },
 };
 const RECIPES = {
   'fire+water': 'steam', 'earth+fire': 'magma', 'earth+water': 'mud',
-  'magma+steam': 'eruption', 'magma+mud': 'obsidian', 'mud+steam': 'quagmire',
+  'air+fire': 'lightning', 'air+water': 'ice', 'air+earth': 'dust',
+  'magma+steam': 'eruption', 'magma+mud': 'obsidian', 'mud+steam': 'quagmire', 'ice+lightning': 'storm',
 };
 const TILES = {
   belt:     { name: 'Belt', icon: '▫️', free: true, dir: true, info: 'Carries orbs one tile per beat in its arrow’s direction. Free and unlimited.' },
@@ -38,6 +43,7 @@ const ENEMIES = {
   knight: { name: 'Iron Knight', icon: '🤺' },
   wyrm: { name: 'Ember Wyrm', icon: '🐉' },
   golem: { name: 'Stone Golem', icon: '🗿' },
+  dummy: { name: 'Training Dummy', icon: '🎯' },
 };
 
 // map legend: '.' floor, '#' rock
@@ -72,12 +78,12 @@ const LEVELS = [
       'Everything you’ve learned, together. This is the last level of the prototype.'] },
 ];
 
-function combine(a, b) {
+function combine(a, b, unlockAll = false) {
   if (a.el === b.el) return { el: a.el, pow: a.pow + b.pow, note: `${ELEMENTS[a.el].name} concentrates` };
   const key = [a.el, b.el].sort().join('+');
   const out = RECIPES[key];
   if (!out) return { fizzle: `${ELEMENTS[a.el].name} and ${ELEMENTS[b.el].name} don’t mix. Fizzle!` };
-  if (ELEMENTS[out].locked) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
+  if (ELEMENTS[out].locked && !unlockAll) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
   return { el: out, pow: ELEMENTS[out].base + (a.pow - ELEMENTS[a.el].base) + (b.pow - ELEMENTS[b.el].base), note: `${ELEMENTS[out].name}!` };
 }
 
@@ -90,23 +96,31 @@ function makeEnemies(level) {
 function applyHit(en, orb, log) {
   const name = ENEMIES[en.type].name, el = orb.el;
   if (en.hp <= 0) { log.push(`The orb sails over the fallen ${name}.`); return; }
-  const fiery = el === 'fire' || el === 'magma';
+  const fiery = el === 'fire' || el === 'magma' || el === 'eruption';
   if (en.shield && !en.soaked && fiery) { log.push(`The ${name}’s fire shield swallows the ${ELEMENTS[el].name}!`); return; }
   let armor = en.armor;
-  if (el === 'earth' || el === 'mud') { if (en.armor) log.push(`${ELEMENTS[el].name} cracks the armour!`); en.armor = 0; armor = 0; }
+  if (['earth', 'mud', 'obsidian', 'dust'].includes(el)) { if (en.armor) log.push(`${ELEMENTS[el].name} cracks the armour!`); en.armor = 0; armor = 0; }
+  if (el === 'dust' && en.shield) { en.shield = false; log.push('Sand scours away the fire shield!'); }
   if (el === 'steam') armor = 0;
   let dmg = Math.max(0, orb.pow - armor);
-  if (en.mired) dmg *= 2;
+  const notes = [];
+  if (armor && dmg < orb.pow) notes.push(`armour −${armor}`);
+  if ((el === 'lightning' || el === 'storm') && en.soaked) { dmg *= 2; notes.push('soaked ×2'); }
+  if (en.brittle) { dmg *= 2; en.brittle = false; notes.push('brittle ×2'); }
+  if (en.mired) { dmg *= 2; notes.push('mired ×2'); }
   en.hp = Math.max(0, en.hp - dmg);
-  log.push(`${ELEMENTS[el].icon} ${ELEMENTS[el].name} ${orb.pow} hits the ${name} for ${dmg}${en.mired ? ' (mired ×2)' : ''}${armor && dmg < orb.pow ? ` (armour −${armor})` : ''}.`);
-  if (el === 'water' || el === 'steam' || el === 'mud') { if (en.shield && !en.soaked) log.push('The fire shield hisses out!'); en.soaked = true; if (en.burn) { en.burn = null; log.push('The burning is put out.'); } }
-  if (el === 'mud') en.mired = true;
+  en.taken = (en.taken || 0) + dmg;
+  log.push(`${ELEMENTS[el].icon} ${ELEMENTS[el].name} ${orb.pow} hits the ${name} for ${dmg}${notes.length ? ` (${notes.join(', ')})` : ''}.`);
+  if (['water', 'steam', 'mud', 'quagmire'].includes(el)) { if (en.shield && !en.soaked) log.push('The fire shield hisses out!'); en.soaked = true; if (en.burn) { en.burn = null; log.push('The burning is put out.'); } }
+  if (el === 'mud' || el === 'quagmire') en.mired = true;
+  if (el === 'ice' || el === 'storm') en.brittle = true;
   if (el === 'fire' && en.hp > 0) en.burn = { per: 1, left: 3 };
-  if (el === 'magma' && en.hp > 0) en.burn = { per: 2, left: 3 };
+  if ((el === 'magma' || el === 'eruption') && en.hp > 0) en.burn = { per: 2, left: 3 };
 }
+const SPLASH = new Set(['eruption', 'quagmire']);
 
 // layout: { "r,c": { t: 'belt'|'launcher'|'well'|<special>, dir, target, well } }
-function simulate(level, layout) {
+function simulate(level, layout, opts = {}) {
   const frames = [], enemies = makeEnemies(level);
   const tiles = ofClone(layout);
   const wells = Object.entries(tiles).filter(([, t]) => t.t === 'well').map(([k, t]) => ({ k, r: +k.split(',')[0], c: +k.split(',')[1], dir: t.dir, el: level.wells[t.well].el, left: level.wells[t.well].n }));
@@ -119,20 +133,20 @@ function simulate(level, layout) {
     for (const w of wells) if (beat % 2 === 0 && w.left > 0) { w.left--; orbs.push({ id: nextId++, el: w.el, pow: ELEMENTS[w.el].base, r: w.r, c: w.c, dir: w.dir, wait: 0 }); }
     for (const p of pending) orbs.push({ id: nextId++, ...p, wait: 0 });
     pending = [];
-    for (const o of orbs) {
-      if (o.gone) continue;
-      if (o.wait > 0) { o.wait--; continue; }
+    const step = (o) => {
       const [dr, dc] = OF_DIRS[o.dir], r = o.r + dr, c = o.c + dc;
       o.r = r; o.c = c;
       const key = r + ',' + c, t = tiles[key];
-      if (r < 0 || r >= 7 || c < 0 || c >= 6) { o.gone = true; log.push(`${ELEMENTS[o.el].icon} rolls off the edge and is lost.`); continue; }
-      if (!t || t.t === 'well' || level.map[r][c] === '#') { o.gone = true; fxNow.push(key); log.push(`${ELEMENTS[o.el].icon} spills onto the ground and is lost.`); continue; }
-      if (t.t === 'belt') { o.dir = t.dir; continue; }
+      if (r < 0 || r >= 7 || c < 0 || c >= 6) { o.gone = true; log.push(`${ELEMENTS[o.el].icon} rolls off the edge and is lost.`); return; }
+      if (!t || t.t === 'well' || level.map[r][c] === '#') { o.gone = true; fxNow.push(key); log.push(`${ELEMENTS[o.el].icon} spills onto the ground and is lost.`); return; }
+      if (t.t === 'belt') { o.dir = t.dir; return; }
       if (t.t === 'launcher') {
         o.gone = true; fxNow.push(key);
         const en = enemies[t.target];
-        if (!en) { log.push('The launcher fires at empty air.'); continue; }
-        applyHit(en, o, log); fxNow.push('enemy-' + t.target); continue;
+        if (!en) { log.push('The launcher fires at empty air.'); return; }
+        if (SPLASH.has(o.el)) { log.push(`${ELEMENTS[o.el].name} bursts over both sides!`); for (const e of Object.values(enemies)) { applyHit(e, o, log); fxNow.push('enemy-' + e.side); } }
+        else { applyHit(en, o, log); fxNow.push('enemy-' + t.target); }
+        return;
       }
       used.add(key); fxNow.push(key);
       if (t.t === 'amp') { o.pow += 3; o.dir = t.dir; }
@@ -141,12 +155,18 @@ function simulate(level, layout) {
       else if (t.t === 'splitter') { t.flip = !t.flip; o.dir = t.flip ? OF_LEFT[t.dir] : OF_RIGHT[t.dir]; }
       else if (t.t === 'fuser') {
         o.gone = true;
-        if (!t.held) { t.held = { el: o.el, pow: o.pow }; continue; }
-        const res = combine(t.held, o); t.held = null;
-        if (res.fizzle) { log.push(res.fizzle); continue; }
+        if (!t.held) { t.held = { el: o.el, pow: o.pow }; return; }
+        const res = combine(t.held, o, opts.unlockAll); t.held = null;
+        if (res.fizzle) { log.push(res.fizzle); return; }
         log.push(res.note); made.add(res.el);
         pending.push({ el: res.el, pow: res.pow, r, c, dir: t.dir });
       }
+    };
+    for (const o of orbs) {
+      if (o.gone) continue;
+      if (o.wait > 0) { o.wait--; continue; }
+      step(o);
+      if (o.el === 'air' && !o.gone && !(o.wait > 0)) step(o); // Swift: air moves twice per beat
     }
     orbs = orbs.filter((o) => !o.gone);
     for (const en of Object.values(enemies)) if (en.burn && en.hp > 0) {

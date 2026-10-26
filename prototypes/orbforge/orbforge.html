@@ -25,6 +25,11 @@
   .lvl:disabled { opacity: .45; cursor: default; }
   .lvl .num { font: 700 16px var(--display); color: var(--gold); text-align: center; }
   .lvl .stars { color: var(--gold); letter-spacing: 2px; }
+  .lvl.sandbox { border-style: dashed; border-color: var(--gold); }
+  .sbrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; grid-column: 1 / -1; }
+  .sbrow select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+  details.log summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+  details.log ol { margin: 6px 0 0; padding-left: 20px; font-size: 12px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
   .locked-note { font-size: 13px; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; }
   .lvlhead { display: flex; align-items: center; gap: 10px; }
   .foes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -92,15 +97,20 @@ const ELEMENTS = {
   steam: { name: 'Steam', icon: '☁️', base: 4, tier: 2, info: 'Scalds through armour and soaks.' },
   magma: { name: 'Magma', icon: '🌋', base: 6, tier: 2, info: 'Burns hard: 2 more damage on each of the next 3 beats.' },
   mud:   { name: 'Mud', icon: '🟫', base: 2, tier: 2, info: 'Cracks armour, soaks, and mires: every later hit does double.' },
-  // Locked in this prototype: shown in the recipe book as ???
-  eruption: { name: 'Eruption', icon: '🌠', base: 10, tier: 3, locked: true, info: 'Hits both enemies.' },
-  obsidian: { name: 'Obsidian', icon: '🖤', base: 12, tier: 3, locked: true, info: 'A huge armour-breaking hit.' },
-  quagmire: { name: 'Quagmire', icon: '🫧', base: 3, tier: 3, locked: true, info: 'Mires and soaks both enemies.' },
-  air: { name: 'Air', icon: '🌪️', base: 1, tier: 1, locked: true, info: 'The fourth element.' },
+  // Locked in the campaign levels (unlocked in the Sandbox): the fourth element, its mixes, and tertiary recipes.
+  air: { name: 'Air', icon: '🌪️', base: 1, tier: 1, locked: true, info: 'Swift: moves 2 tiles per beat, so it arrives first.' },
+  lightning: { name: 'Lightning', icon: '⚡', base: 4, tier: 2, locked: true, info: 'Double damage against a soaked enemy.' },
+  ice: { name: 'Ice', icon: '❄️', base: 3, tier: 2, locked: true, info: 'Makes the enemy brittle: its next hit does double.' },
+  dust: { name: 'Dust', icon: '🌫️', base: 2, tier: 2, locked: true, info: 'Sandblasts away armour and fire shields.' },
+  eruption: { name: 'Eruption', icon: '🌠', base: 10, tier: 3, locked: true, info: 'Hits both enemies and sets them both burning (2 per beat for 3 beats).' },
+  obsidian: { name: 'Obsidian', icon: '🖤', base: 14, tier: 3, locked: true, info: 'A huge hit that cracks armour.' },
+  quagmire: { name: 'Quagmire', icon: '🫧', base: 3, tier: 3, locked: true, info: 'Hits both enemies, soaking and miring them both.' },
+  storm: { name: 'Storm', icon: '⛈️', base: 9, tier: 3, locked: true, info: 'Double damage against a soaked enemy, and leaves it brittle.' },
 };
 const RECIPES = {
   'fire+water': 'steam', 'earth+fire': 'magma', 'earth+water': 'mud',
-  'magma+steam': 'eruption', 'magma+mud': 'obsidian', 'mud+steam': 'quagmire',
+  'air+fire': 'lightning', 'air+water': 'ice', 'air+earth': 'dust',
+  'magma+steam': 'eruption', 'magma+mud': 'obsidian', 'mud+steam': 'quagmire', 'ice+lightning': 'storm',
 };
 const TILES = {
   belt:     { name: 'Belt', icon: '▫️', free: true, dir: true, info: 'Carries orbs one tile per beat in its arrow’s direction. Free and unlimited.' },
@@ -118,6 +128,7 @@ const ENEMIES = {
   knight: { name: 'Iron Knight', icon: '🤺' },
   wyrm: { name: 'Ember Wyrm', icon: '🐉' },
   golem: { name: 'Stone Golem', icon: '🗿' },
+  dummy: { name: 'Training Dummy', icon: '🎯' },
 };
 
 // map legend: '.' floor, '#' rock
@@ -152,12 +163,12 @@ const LEVELS = [
       'Everything you’ve learned, together. This is the last level of the prototype.'] },
 ];
 
-function combine(a, b) {
+function combine(a, b, unlockAll = false) {
   if (a.el === b.el) return { el: a.el, pow: a.pow + b.pow, note: `${ELEMENTS[a.el].name} concentrates` };
   const key = [a.el, b.el].sort().join('+');
   const out = RECIPES[key];
   if (!out) return { fizzle: `${ELEMENTS[a.el].name} and ${ELEMENTS[b.el].name} don’t mix. Fizzle!` };
-  if (ELEMENTS[out].locked) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
+  if (ELEMENTS[out].locked && !unlockAll) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
   return { el: out, pow: ELEMENTS[out].base + (a.pow - ELEMENTS[a.el].base) + (b.pow - ELEMENTS[b.el].base), note: `${ELEMENTS[out].name}!` };
 }
 
@@ -170,23 +181,31 @@ function makeEnemies(level) {
 function applyHit(en, orb, log) {
   const name = ENEMIES[en.type].name, el = orb.el;
   if (en.hp <= 0) { log.push(`The orb sails over the fallen ${name}.`); return; }
-  const fiery = el === 'fire' || el === 'magma';
+  const fiery = el === 'fire' || el === 'magma' || el === 'eruption';
   if (en.shield && !en.soaked && fiery) { log.push(`The ${name}’s fire shield swallows the ${ELEMENTS[el].name}!`); return; }
   let armor = en.armor;
-  if (el === 'earth' || el === 'mud') { if (en.armor) log.push(`${ELEMENTS[el].name} cracks the armour!`); en.armor = 0; armor = 0; }
+  if (['earth', 'mud', 'obsidian', 'dust'].includes(el)) { if (en.armor) log.push(`${ELEMENTS[el].name} cracks the armour!`); en.armor = 0; armor = 0; }
+  if (el === 'dust' && en.shield) { en.shield = false; log.push('Sand scours away the fire shield!'); }
   if (el === 'steam') armor = 0;
   let dmg = Math.max(0, orb.pow - armor);
-  if (en.mired) dmg *= 2;
+  const notes = [];
+  if (armor && dmg < orb.pow) notes.push(`armour −${armor}`);
+  if ((el === 'lightning' || el === 'storm') && en.soaked) { dmg *= 2; notes.push('soaked ×2'); }
+  if (en.brittle) { dmg *= 2; en.brittle = false; notes.push('brittle ×2'); }
+  if (en.mired) { dmg *= 2; notes.push('mired ×2'); }
   en.hp = Math.max(0, en.hp - dmg);
-  log.push(`${ELEMENTS[el].icon} ${ELEMENTS[el].name} ${orb.pow} hits the ${name} for ${dmg}${en.mired ? ' (mired ×2)' : ''}${armor && dmg < orb.pow ? ` (armour −${armor})` : ''}.`);
-  if (el === 'water' || el === 'steam' || el === 'mud') { if (en.shield && !en.soaked) log.push('The fire shield hisses out!'); en.soaked = true; if (en.burn) { en.burn = null; log.push('The burning is put out.'); } }
-  if (el === 'mud') en.mired = true;
+  en.taken = (en.taken || 0) + dmg;
+  log.push(`${ELEMENTS[el].icon} ${ELEMENTS[el].name} ${orb.pow} hits the ${name} for ${dmg}${notes.length ? ` (${notes.join(', ')})` : ''}.`);
+  if (['water', 'steam', 'mud', 'quagmire'].includes(el)) { if (en.shield && !en.soaked) log.push('The fire shield hisses out!'); en.soaked = true; if (en.burn) { en.burn = null; log.push('The burning is put out.'); } }
+  if (el === 'mud' || el === 'quagmire') en.mired = true;
+  if (el === 'ice' || el === 'storm') en.brittle = true;
   if (el === 'fire' && en.hp > 0) en.burn = { per: 1, left: 3 };
-  if (el === 'magma' && en.hp > 0) en.burn = { per: 2, left: 3 };
+  if ((el === 'magma' || el === 'eruption') && en.hp > 0) en.burn = { per: 2, left: 3 };
 }
+const SPLASH = new Set(['eruption', 'quagmire']);
 
 // layout: { "r,c": { t: 'belt'|'launcher'|'well'|<special>, dir, target, well } }
-function simulate(level, layout) {
+function simulate(level, layout, opts = {}) {
   const frames = [], enemies = makeEnemies(level);
   const tiles = ofClone(layout);
   const wells = Object.entries(tiles).filter(([, t]) => t.t === 'well').map(([k, t]) => ({ k, r: +k.split(',')[0], c: +k.split(',')[1], dir: t.dir, el: level.wells[t.well].el, left: level.wells[t.well].n }));
@@ -199,20 +218,20 @@ function simulate(level, layout) {
     for (const w of wells) if (beat % 2 === 0 && w.left > 0) { w.left--; orbs.push({ id: nextId++, el: w.el, pow: ELEMENTS[w.el].base, r: w.r, c: w.c, dir: w.dir, wait: 0 }); }
     for (const p of pending) orbs.push({ id: nextId++, ...p, wait: 0 });
     pending = [];
-    for (const o of orbs) {
-      if (o.gone) continue;
-      if (o.wait > 0) { o.wait--; continue; }
+    const step = (o) => {
       const [dr, dc] = OF_DIRS[o.dir], r = o.r + dr, c = o.c + dc;
       o.r = r; o.c = c;
       const key = r + ',' + c, t = tiles[key];
-      if (r < 0 || r >= 7 || c < 0 || c >= 6) { o.gone = true; log.push(`${ELEMENTS[o.el].icon} rolls off the edge and is lost.`); continue; }
-      if (!t || t.t === 'well' || level.map[r][c] === '#') { o.gone = true; fxNow.push(key); log.push(`${ELEMENTS[o.el].icon} spills onto the ground and is lost.`); continue; }
-      if (t.t === 'belt') { o.dir = t.dir; continue; }
+      if (r < 0 || r >= 7 || c < 0 || c >= 6) { o.gone = true; log.push(`${ELEMENTS[o.el].icon} rolls off the edge and is lost.`); return; }
+      if (!t || t.t === 'well' || level.map[r][c] === '#') { o.gone = true; fxNow.push(key); log.push(`${ELEMENTS[o.el].icon} spills onto the ground and is lost.`); return; }
+      if (t.t === 'belt') { o.dir = t.dir; return; }
       if (t.t === 'launcher') {
         o.gone = true; fxNow.push(key);
         const en = enemies[t.target];
-        if (!en) { log.push('The launcher fires at empty air.'); continue; }
-        applyHit(en, o, log); fxNow.push('enemy-' + t.target); continue;
+        if (!en) { log.push('The launcher fires at empty air.'); return; }
+        if (SPLASH.has(o.el)) { log.push(`${ELEMENTS[o.el].name} bursts over both sides!`); for (const e of Object.values(enemies)) { applyHit(e, o, log); fxNow.push('enemy-' + e.side); } }
+        else { applyHit(en, o, log); fxNow.push('enemy-' + t.target); }
+        return;
       }
       used.add(key); fxNow.push(key);
       if (t.t === 'amp') { o.pow += 3; o.dir = t.dir; }
@@ -221,12 +240,18 @@ function simulate(level, layout) {
       else if (t.t === 'splitter') { t.flip = !t.flip; o.dir = t.flip ? OF_LEFT[t.dir] : OF_RIGHT[t.dir]; }
       else if (t.t === 'fuser') {
         o.gone = true;
-        if (!t.held) { t.held = { el: o.el, pow: o.pow }; continue; }
-        const res = combine(t.held, o); t.held = null;
-        if (res.fizzle) { log.push(res.fizzle); continue; }
+        if (!t.held) { t.held = { el: o.el, pow: o.pow }; return; }
+        const res = combine(t.held, o, opts.unlockAll); t.held = null;
+        if (res.fizzle) { log.push(res.fizzle); return; }
         log.push(res.note); made.add(res.el);
         pending.push({ el: res.el, pow: res.pow, r, c, dir: t.dir });
       }
+    };
+    for (const o of orbs) {
+      if (o.gone) continue;
+      if (o.wait > 0) { o.wait--; continue; }
+      step(o);
+      if (o.el === 'air' && !o.gone && !(o.wait > 0)) step(o); // Swift: air moves twice per beat
     }
     orbs = orbs.filter((o) => !o.gone);
     for (const en of Object.values(enemies)) if (en.burn && en.hp > 0) {
@@ -268,7 +293,7 @@ const ROTATE = { '↑': '→', '→': '↓', '↓': '←', '←': '↑' };
 
 // ---------------------------------------------------------------- saved progress
 const SAVE_KEY = 'orbforge-proto-v1';
-let save = { best: {}, layouts: {}, known: [] };
+let save = { best: {}, layouts: {}, known: [], sandbox: null };
 try { const raw = localStorage.getItem(SAVE_KEY); if (raw) save = { ...save, ...JSON.parse(raw) }; } catch (e) { /* storage unavailable */ }
 const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* storage unavailable */ } };
 // best[i] = { stars, left: {tile: n} } — tiles left over from the best clear of level i
@@ -281,19 +306,39 @@ function startInventory(i) {
 }
 const unlocked = (i) => i === 0 || !!save.best[i - 1];
 
+// ---------------------------------------------------------------- sandbox: every tile, every element, training dummies
+const DUMMIES = {
+  none: { label: 'Empty', e: null },
+  plain: { label: 'Training Dummy', e: { type: 'dummy', hp: 99 } },
+  armored: { label: 'Armoured (🛡️3)', e: { type: 'dummy', hp: 99, armor: 3 } },
+  warded: { label: 'Fire-warded', e: { type: 'dummy', hp: 99, shield: true } },
+  both: { label: 'Armoured + warded', e: { type: 'dummy', hp: 99, armor: 3, shield: true } },
+};
+const SB = () => (save.sandbox ||= { wells: [{ el: 'fire', n: 1 }, { el: 'water', n: 1 }, { el: 'earth', n: 1 }, { el: 'air', n: 1 }], L: 'plain', R: 'armored', perWell: 1 });
+function sandboxLevel() {
+  const sb = SB(), enemies = {};
+  for (const side of ['L', 'R']) if (DUMMIES[sb[side]].e) enemies[side] = DUMMIES[sb[side]].e;
+  return { name: 'Sandbox', par: 0, map: Array(7).fill('......'), wells: sb.wells, grant: {}, enemies, sandbox: true,
+    teach: ['Everything is unlocked here: all tiles (unlimited), all four elements, every recipe including tertiary ones.',
+      'Add wells of any element below. Each well holds as many orbs as you choose when you add it.',
+      'The dummies have 99 HP. After each play you get the damage totals and a full battle log, so you can test one tile or one combination at a time.',
+      'Tertiary recipes: Magma + Steam = Eruption, Magma + Mud = Obsidian, Mud + Steam = Quagmire, Lightning + Ice = Storm.'] };
+}
+const isSandbox = () => S.li === 'sandbox';
+
 // ---------------------------------------------------------------- state
 const S = { view: 'levels', li: 0, layout: {}, tool: null, dir: '↑', target: 'L', last: null, msg: '', play: null, fi: 0, timer: null, result: null };
 const app = document.getElementById('app');
-const lvl = () => LEVELS[S.li];
+const lvl = () => (isSandbox() ? sandboxLevel() : LEVELS[S.li]);
 const keyOf = (r, c) => r + ',' + c;
-function inv() { return startInventory(S.li); }
-function avail(k) { return (inv()[k] || 0) - Object.values(S.layout).filter((t) => t.t === k).length; }
+function inv() { return isSandbox() ? Object.fromEntries(SPECIALS.map((k) => [k, 99])) : startInventory(S.li); }
+function avail(k) { return isSandbox() ? 99 : (inv()[k] || 0) - Object.values(S.layout).filter((t) => t.t === k).length; }
 
 function openLevel(i) {
   clearTimeout(S.timer);
   S.view = 'level'; S.li = i; S.layout = { ...(save.layouts[i] || {}) }; S.tool = null; S.last = null; S.play = null; S.result = null;
   S.target = 'L';
-  S.msg = LEVELS[i].teach[0];
+  S.msg = lvl().teach[0];
   render();
 }
 function storeLayout() { save.layouts[S.li] = S.layout; persist(); }
@@ -345,7 +390,7 @@ function play() {
   const L = lvl();
   const placedWells = Object.values(S.layout).filter((t) => t.t === 'well').length;
   if (!placedWells) { S.msg = 'Place at least one well first.'; return render(); }
-  S.result = simulate(L, S.layout);
+  S.result = simulate(L, S.layout, { unlockAll: !!L.sandbox });
   S.play = S.result.frames; S.fi = 0; S.tool = null;
   for (const e of S.result.made) if (!save.known.includes(e)) save.known.push(e);
   persist();
@@ -359,6 +404,7 @@ function step() {
 function skip() { if (!S.play) return; clearTimeout(S.timer); S.fi = S.play.length - 1; finish(); }
 function finish() {
   const r = S.result, L = lvl();
+  if (L.sandbox) { S.view = 'result'; render(); return; }
   if (r.win) {
     const used = sum(r.usedTiles);
     const stars = used <= L.par ? 3 : used <= L.par + 1 ? 2 : 1;
@@ -415,13 +461,22 @@ function toolbox() {
   const tool = (id, icon, name, count, disabled) => el('button', { class: 'item', 'aria-pressed': S.tool === id ? 'true' : 'false', disabled,
     onclick: () => { S.tool = S.tool === id ? null : id; S.last = null; S.msg = id === 'erase' ? 'Tap a tile to clear it.' : id.startsWith('well') ? 'Tap a tile to put the well there. Placing it again moves it.' : TILES[id].info; render(); } },
   count != null ? el('span', { class: 'ct' }, count) : null, el('span', { class: 'ic' }, icon), el('span', { class: 'nm' }, name));
-  box.append(el('h3', {}, 'Wells (this stage only)'));
+  box.append(el('h3', {}, L.sandbox ? 'Wells (add as many as you like)' : 'Wells (this stage only)'));
   L.wells.forEach((w, i) => { const placed = Object.values(S.layout).some((t) => t.t === 'well' && t.well === i); box.append(tool('well' + i, ELEMENTS[w.el].icon, `${ELEMENTS[w.el].name} well${placed ? ' ✓' : ''}`, '×' + w.n)); });
+  if (L.sandbox) {
+    const sb = SB();
+    box.append(el('div', { class: 'sbrow' },
+      el('span', { class: 'sub' }, 'Add a well with'),
+      el('select', { id: 'sb-per', 'aria-label': 'Orbs per new well', onchange: (e) => { sb.perWell = +e.target.value; persist(); } },
+        [1, 2, 3, 4].map((n) => el('option', { value: n, selected: sb.perWell === n }, `${n} orb${n > 1 ? 's' : ''}`))),
+      ['fire', 'water', 'earth', 'air'].map((k) => btn(`+ ${ELEMENTS[k].icon}`, () => { sb.wells.push({ el: k, n: sb.perWell }); persist(); S.tool = 'well' + (sb.wells.length - 1); S.msg = `New ${ELEMENTS[k].name} well with ${sb.perWell} orb${sb.perWell > 1 ? 's' : ''}. Tap a tile to place it.`; render(); }, { small: true })),
+      sb.wells.length ? btn('Remove last well', () => { const i = sb.wells.length - 1; for (const [kk, t] of Object.entries(S.layout)) if (t.t === 'well' && t.well === i) delete S.layout[kk]; sb.wells.pop(); S.tool = null; storeLayout(); render(); }, { small: true }) : null));
+  }
   box.append(el('h3', {}, 'Free'));
   box.append(tool('belt', '⬆️', 'Belt'), tool('launcher', '🏹', 'Launcher'), tool('erase', '🧽', 'Clear'));
   const inventory = inv();
   const specials = SPECIALS.filter((k) => inventory[k]);
-  if (specials.length) { box.append(el('h3', {}, 'Your tiles (used up when an orb touches them; the rest carry over)')); for (const k of specials) box.append(tool(k, TILES[k].icon, TILES[k].name, '×' + avail(k), avail(k) <= 0)); }
+  if (specials.length) { box.append(el('h3', {}, L.sandbox ? 'Special tiles (unlimited in the sandbox)' : 'Your tiles (used up when an orb touches them; the rest carry over)')); for (const k of specials) box.append(tool(k, TILES[k].icon, TILES[k].name, L.sandbox ? '∞' : '×' + avail(k), avail(k) <= 0)); }
   return box;
 }
 function dirPicker() {
@@ -434,16 +489,17 @@ function dirPicker() {
 }
 function recipeBook() {
   const row = (a, b, out) => {
-    const known = save.known.includes(out), locked = ELEMENTS[out].locked;
-    return el('li', {}, `${ELEMENTS[a].icon} + ${ELEMENTS[b].icon} → `, locked ? el('span', { class: 'sub' }, '🔒 unlocks later') : known ? el('span', {}, `${ELEMENTS[out].icon} ${ELEMENTS[out].name}: ${ELEMENTS[out].info}`) : el('span', { class: 'sub' }, '??? (mix it to find out)'));
+    const known = save.known.includes(out), locked = ELEMENTS[out].locked && !known;
+    return el('li', {}, `${ELEMENTS[a].icon} + ${ELEMENTS[b].icon} → `, locked ? el('span', { class: 'sub' }, '🔒 unlocks later (try it in the Sandbox)') : known ? el('span', {}, `${ELEMENTS[out].icon} ${ELEMENTS[out].name}: ${ELEMENTS[out].info}`) : el('span', { class: 'sub' }, '??? (mix it to find out)'));
   };
   return el('details', { class: 'help' }, el('summary', {}, `Recipe book (${save.known.length} found)`),
     el('ul', {},
       ['fire', 'water', 'earth'].map((e) => el('li', {}, `${ELEMENTS[e].icon} ${ELEMENTS[e].name} (${ELEMENTS[e].base}): ${ELEMENTS[e].info}`)),
-      el('li', {}, '🌪️ The fourth element: 🔒 unlocks in a later chapter'),
+      el('li', {}, `🌪️ Air (1): ${ELEMENTS.air.info} The fourth element; in the campaign it unlocks in a later chapter.`),
       el('li', {}, 'Same + same: concentrates, adding both orbs’ power.'),
       row('fire', 'water', 'steam'), row('fire', 'earth', 'magma'), row('water', 'earth', 'mud'),
-      row('magma', 'steam', 'eruption'), row('magma', 'mud', 'obsidian'), row('mud', 'steam', 'quagmire')));
+      row('fire', 'air', 'lightning'), row('water', 'air', 'ice'), row('earth', 'air', 'dust'),
+      row('magma', 'steam', 'eruption'), row('magma', 'mud', 'obsidian'), row('mud', 'steam', 'quagmire'), row('lightning', 'ice', 'storm')));
 }
 
 function render() {
@@ -457,19 +513,31 @@ function render() {
           el('span', { class: 'num' }, i + 1), el('span', { class: 'lname' }, open ? lv.name : 'Locked'),
           el('span', { class: 'stars' }, b ? '★'.repeat(b.stars) + '☆'.repeat(3 - b.stars) : open ? 'new' : '🔒'));
       })),
+      el('button', { class: 'lvl sandbox', onclick: () => openLevel('sandbox') }, el('span', { class: 'num' }, '⚗️'), el('span', { class: 'lname' }, 'Sandbox: every tile and element'), el('span', { class: 'stars' }, 'test')),
       el('div', { class: 'locked-note' }, save.best[5] ? '✨ Level 6 cleared. In the full game this unlocks tertiary recipes; the fourth element 🌪️ arrives in chapter 2.' : 'Tertiary recipes unlock after level 6. The fourth element 🌪️ comes in a later chapter.'),
       recipeBook(),
-      btn('Reset all progress', () => { save = { best: {}, layouts: {}, known: [] }; persist(); render(); }, { small: true }));
+      btn('Reset all progress', () => { save = { best: {}, layouts: {}, known: [], sandbox: null }; persist(); render(); }, { small: true }));
     return;
   }
   const frame = S.play ? S.play[S.fi] : null;
   const enemies = frame ? frame.enemies : makeEnemies(L);
   const fx = frame ? frame.fx : [];
   const head = el('div', { class: 'lvlhead' }, btn('← Levels', () => { clearTimeout(S.timer); S.view = 'levels'; S.play = null; render(); }, { small: true }),
-    el('h2', {}, `${S.li + 1}. ${L.name}`));
+    el('h2', {}, L.sandbox ? 'Sandbox' : `${S.li + 1}. ${L.name}`));
   const foes = el('div', { class: 'foes' }, enemyCard('L', enemies.L, fx.includes('enemy-L')), enemyCard('R', enemies.R, fx.includes('enemy-R')));
   let top;
-  if (S.view === 'result') {
+  const sbFoes = L.sandbox && !S.play ? el('div', { class: 'sbrow' }, ['L', 'R'].map((side) => el('label', { class: 'sub' }, side === 'L' ? 'Left: ' : 'Right: ',
+    el('select', { id: 'sb-' + side, onchange: (e) => { SB()[side] = e.target.value; persist(); for (const t of Object.values(S.layout)) if (t.t === 'launcher' && !sandboxLevel().enemies[t.target]) t.target = Object.keys(sandboxLevel().enemies)[0] || 'L'; render(); } },
+      Object.entries(DUMMIES).map(([k, d]) => el('option', { value: k, selected: SB()[side] === k }, d.label)))))) : null;
+  if (S.view === 'result' && L.sandbox) {
+    const last = S.play[S.play.length - 1].enemies;
+    const lines = S.play.map((f) => (f.log ? `Beat ${Math.max(0, f.beat + 1)}: ${f.log}` : null)).filter(Boolean);
+    top = el('div', { class: 'result win' }, el('strong', {}, 'Damage dealt'),
+      el('span', {}, ['L', 'R'].filter((s) => last[s]).map((s) => `${s === 'L' ? 'Left' : 'Right'}: ${last[s].taken || 0}`).join(' · ') || 'No targets.'),
+      S.result.made.length ? el('span', { class: 'sub' }, 'Made this run: ' + S.result.made.map((e) => `${ELEMENTS[e].icon} ${ELEMENTS[e].name}`).join(', ')) : null,
+      el('details', { class: 'log' }, el('summary', {}, `Battle log (${lines.length} beats)`), el('ol', {}, lines.map((l) => el('li', {}, l)))),
+      el('div', { class: 'actions' }, btn('Edit and play again', () => { S.view = 'level'; S.play = null; render(); }, { primary: true }), btn('Watch again', () => { S.view = 'level'; S.fi = 0; step(); })));
+  } else if (S.view === 'result') {
     const r = S.result;
     top = r.win
       ? el('div', { class: 'result win' }, el('strong', {}, `Victory ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}`),
@@ -479,8 +547,8 @@ function render() {
       : el('div', { class: 'result lose' }, el('strong', {}, 'Not this time'), el('span', {}, r.reason + ' Your layout is still here. Adjust it and try again.'),
         el('div', { class: 'actions' }, btn('Retry', () => { S.view = 'level'; S.play = null; render(); }, { primary: true }), btn('Watch again', () => { S.view = 'level'; S.fi = 0; step(); })));
   } else top = el('p', { class: 'msg', 'aria-live': 'polite' }, frame ? (frame.log || `Beat ${frame.beat + 1}`) : S.msg);
-  const teach = S.play ? null : el('details', { class: 'help', open: S.li < 5 && !save.best[S.li] }, el('summary', {}, 'How this level works'), el('ul', {}, L.teach.map((t) => el('li', {}, t))));
-  app.replaceChildren(...[head, foes, top, boardView(frame),
+  const teach = S.play ? null : el('details', { class: 'help', open: L.sandbox ? !save.layouts.sandbox : S.li < 5 && !save.best[S.li] }, el('summary', {}, 'How this level works'), el('ul', {}, L.teach.map((t) => el('li', {}, t))));
+  app.replaceChildren(...[head, foes, sbFoes, top, boardView(frame),
     S.play ? (S.view === 'result' ? null : el('div', { class: 'actions' }, el('span', { class: 'sub' }, `Beat ${Math.max(0, frame.beat + 1)}`), btn('Skip to the end', skip, { small: true })))
       : el('div', { class: 'actions' }, btn('▶ Play', play, { primary: true }), btn('Clear board', () => { S.layout = {}; storeLayout(); S.msg = 'Board cleared.'; render(); }, { small: true })),
     S.play ? null : dirPicker(), S.play ? null : toolbox(), teach, recipeBook()].filter(Boolean));
