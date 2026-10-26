@@ -11,3 +11,5 @@
 It loads three.js 0.170.0 from jsDelivr, so it needs a network connection to view.
 
 `quiet-kingdom.html` refines the chosen Quiet Kingdom style: ambient occlusion (GTAO, toggleable), rounded and filleted geometry, a fixed camera and a larger 8 × 7 board.
+
+`orb-designs.html` shows five candidate orb designs (Glowing Core, Glass Vessel, Brass Gyre, Soft-Cut Gem, Halo Wisp) for the six current elements, with dark outline-only element symbols.
