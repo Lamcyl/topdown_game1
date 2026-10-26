@@ -1,0 +1,269 @@
+<title>Orbforge Orb Effects</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;600&display=swap">
+<style>
+  /* Layout: a column of five animated design cards: six orbs on pedestals per card, then notes. Quiet Kingdom palette. */
+  :root {
+    --bg: #c9d3cf; --card: #f3f1ea; --line: #c4c8bf; --fg: #2d2f2a; --muted: #6a6f66; --gold: #9a7a3a;
+    --display: "Cinzel", Georgia, serif; --body: "Inter", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.5 var(--body); }
+  .wrap { max-width: 760px; margin: 0 auto; padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; }
+  h1 { font: 700 24px/1.2 var(--display); letter-spacing: .04em; margin: 0; }
+  .intro { color: var(--muted); margin: 4px 0 0; max-width: 65ch; }
+  .legend { margin: 0; font-size: 13px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .stage { position: relative; aspect-ratio: 3 / 2; width: 100%; max-width: 100%; background: #c9d3cf; }
+  .stage canvas { display: block; width: 100% !important; height: 100% !important; }
+  .stage .tag { position: absolute; left: 10px; top: 10px; font: 700 12px var(--display); letter-spacing: .08em; background: rgba(45,47,42,.7); color: #fff; padding: 4px 8px; border-radius: 4px; }
+  .notes { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .notes h2 { font: 700 18px var(--display); margin: 0; letter-spacing: .03em; }
+  .notes p { margin: 0; max-width: 65ch; }
+  .cost { font-size: 13px; color: var(--muted); }
+  .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Orb Effects</h1>
+    <p class="intro">Primary orbs stay plain Glowing Cores. Mixed orbs (secondary elements) and doubled orbs (the same element fused twice) get an animated effect around the orb, so you can tell at a glance that they’re stronger. Here are five ways to animate it. Each one is built on the Glowing Core orb with its dark outline symbol.</p>
+  </header>
+  <p class="legend">Back row, doubled: 🔥 Fire ×2 · 💧 Water ×2 · 🪨 Earth ×2. Front row, mixed: ☁️ Steam (fire + water) · 🌋 Magma (fire + earth) · 🟫 Mud (water + earth).</p>
+  <div id="cards"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const COL = { fire: 0xff7a2a, water: 0x4aa8ff, earth: 0xd9a95a, steam: 0xc9d8e4, magma: 0xff4f14, mud: 0x9a7650 };
+const DARK = { fire: '#6e2306', water: '#0d3a66', earth: '#45300f', steam: '#33424f', magma: '#561203', mud: '#2b1c0d' };
+const GLOW = { steam: 0.5 };
+const ORBS = [
+  { k: 'fire', parents: ['fire', 'fire'], doubled: true, aura: 'flames' },
+  { k: 'water', parents: ['water', 'water'], doubled: true, aura: 'drops' },
+  { k: 'earth', parents: ['earth', 'earth'], doubled: true, aura: 'pebbles' },
+  { k: 'steam', parents: ['fire', 'water'], aura: 'wisps' },
+  { k: 'magma', parents: ['fire', 'earth'], aura: 'embers' },
+  { k: 'mud', parents: ['water', 'earth'], aura: 'bubbles' },
+];
+
+// ---------------------------------------------------------------- textures
+function symbolTexture(kind, color, width = 12) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.scale(2, 2); g.translate(64, 66); g.lineJoin = 'round'; g.lineCap = 'round'; g.lineWidth = width; g.strokeStyle = color;
+  const path = (draw, close = true) => { g.beginPath(); draw(); if (close) g.closePath(); g.stroke(); };
+  const flame = (s = 1, oy = 0) => path(() => { g.moveTo(0, -40 * s + oy); g.bezierCurveTo(28 * s, -10 * s + oy, 32 * s, 14 * s + oy, 0, 36 * s + oy); g.bezierCurveTo(-32 * s, 14 * s + oy, -22 * s, -6 * s + oy, -9 * s, -16 * s + oy); g.bezierCurveTo(-6 * s, -2 * s + oy, 2 * s, 2 * s + oy, 4 * s, 4 * s + oy); g.bezierCurveTo(10 * s, -12 * s + oy, 6 * s, -28 * s + oy, 0, -40 * s + oy); });
+  if (kind === 'fire') flame();
+  if (kind === 'water') path(() => { g.moveTo(0, -42); g.bezierCurveTo(16, -16, 30, 0, 30, 13); g.arc(0, 13, 30, 0, Math.PI, false); g.bezierCurveTo(-30, 0, -16, -16, 0, -42); });
+  if (kind === 'earth') path(() => { g.moveTo(-40, 30); g.lineTo(-13, -16); g.lineTo(0, 2); g.lineTo(13, -32); g.lineTo(40, 30); });
+  if (kind === 'magma') { path(() => { g.moveTo(-40, 34); g.lineTo(-15, 0); g.lineTo(15, 0); g.lineTo(40, 34); }); flame(0.45, -22); }
+  if (kind === 'steam') for (const x of [-20, 0, 20]) path(() => { g.moveTo(x, 34); g.bezierCurveTo(x - 12, 18, x + 12, 6, x, -10); g.bezierCurveTo(x - 12, -22, x + 6, -30, x, -38); }, false);
+  if (kind === 'mud') { path(() => { g.ellipse(0, 20, 38, 14, 0, 0, Math.PI * 2); }); path(() => { g.arc(-10, -6, 9, 0, Math.PI * 2); }); path(() => { g.arc(14, -22, 6, 0, Math.PI * 2); }); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function softDot() {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.4, 'rgba(255,255,255,0.6)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
+}
+function runeRingTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  g.translate(256, 256); g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineCap = 'round';
+  const inner = 256 * 0.74, outer = 256 * 0.98;
+  g.lineWidth = 9; g.beginPath(); g.arc(0, 0, inner + 6, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, outer - 6, 0, Math.PI * 2); g.stroke();
+  for (let i = 0; i < 18; i++) {
+    g.save(); g.rotate((i / 18) * Math.PI * 2); g.lineWidth = 10; g.beginPath();
+    const mid = (inner + outer) / 2, k = i % 3;
+    if (k === 0) { g.moveTo(mid - 14, -10); g.lineTo(mid + 14, 0); g.lineTo(mid - 14, 10); }
+    else if (k === 1) { g.moveTo(mid - 14, 0); g.lineTo(mid + 14, 0); g.moveTo(mid, -10); g.lineTo(mid, 10); }
+    else { g.arc(mid, 0, 9, 0, Math.PI * 2); }
+    g.stroke(); g.restore();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const SOFT = softDot(), RUNES = runeRingTexture();
+const bright = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
+const glowSprite = (hex, size, k = 2.2, additive = true, opacity = 1) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: bright(hex, k), transparent: true, opacity, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending }));
+  s.scale.setScalar(size); return s;
+};
+
+// ---------------------------------------------------------------- effect designs
+// Each build(orb, group, rng) adds objects around the orb (radius ~0.27) and returns update(t, dt).
+const DESIGNS = [
+  { name: 'Recipe Motes',
+    text: 'Glowing motes orbit the orb, one ring per ingredient in that ingredient’s colour. Magma has a fire ring and an earth ring; Fire ×2 has two fire rings. It shows what the orb is made of.',
+    cost: 'Very cheap: six glowing sprites per orb.',
+    build(o, g) {
+      const motes = [], tilts = [[0.55, 0], [-0.55, 1.3]];
+      o.parents.forEach((p, pi) => { for (let i = 0; i < 3; i++) { const s = glowSprite(COL[p], 0.16, 2.6 * (GLOW[p] || 1)); g.add(s); motes.push({ s, pi, a: (i / 3) * Math.PI * 2 + pi }); } });
+      const e = tilts.map(([x, y]) => new THREE.Euler(x, y, 0));
+      return (t) => { for (const m of motes) { const a = m.a + t * (m.pi ? 1.7 : -1.4); m.s.position.set(Math.cos(a) * 0.43, 0, Math.sin(a) * 0.43).applyEuler(e[m.pi]); } };
+    } },
+  { name: 'Elemental Aura',
+    text: 'Each element moves in its own way: doubled fire licks with flames, water droplets circle, pebbles tumble around earth, steam rises in wisps, magma throws embers, mud bubbles and pops. The most expressive and readable.',
+    cost: 'Cheap to moderate: about 20–30 small particles per orb.',
+    build(o, g) {
+      const R = 0.27, parts = [];
+      const rnd = Math.random;
+      if (o.aura === 'pebbles') {
+        const m = new THREE.MeshStandardMaterial({ color: 0x9c8460, roughness: 0.9 });
+        for (let i = 0; i < 6; i++) { const p = new THREE.Mesh(new THREE.DodecahedronGeometry(0.05 + rnd() * 0.025, 1), m); p.castShadow = true; g.add(p); parts.push({ p, a: (i / 6) * Math.PI * 2, y: (rnd() - 0.5) * 0.2, sp: 0.9 + rnd() * 0.4 }); }
+        return (t) => { for (const q of parts) { const a = q.a + t * q.sp; q.p.position.set(Math.cos(a) * 0.45, q.y + Math.sin(t * 2 + q.a) * 0.04, Math.sin(a) * 0.45); q.p.rotation.set(t * 2 + q.a, t * 1.3, 0); } };
+      }
+      if (o.aura === 'drops') {
+        for (let i = 0; i < 8; i++) { const s = glowSprite(COL.water, 0.11, 2.4); g.add(s); parts.push({ s, a: (i / 8) * Math.PI * 2 }); }
+        return (t) => { for (const q of parts) { const a = q.a - t * 1.2; q.s.position.set(Math.cos(a) * 0.44, Math.sin(t * 3 + q.a * 2) * 0.08, Math.sin(a) * 0.44); } };
+      }
+      // particle emitters: flames, embers, wisps, bubbles
+      const cfg = {
+        flames: { n: 26, col: 0xffb347, k: 2.6, size: [0.14, 0.02], life: 0.7, up: 0.55, out: 0.1 },
+        embers: { n: 30, col: 0xff3a0a, k: 1.6, size: [0.1, 0.05], life: 1.2, up: 0.5, out: 0.35, normal: true, opacity: 1 },
+        wisps: { n: 18, col: 0x5f7488, k: 1.0, size: [0.14, 0.46], life: 1.6, up: 0.38, out: 0.06, normal: true, opacity: 0.75 },
+        bubbles: { n: 12, col: 0x4a3420, k: 1.0, size: [0.02, 0.16], life: 1.1, up: 0.05, out: 0.02, normal: true, opacity: 1, surface: true },
+      }[o.aura];
+      for (let i = 0; i < cfg.n; i++) { const s = glowSprite(cfg.col, 0.1, cfg.k, !cfg.normal, cfg.opacity ?? 1); g.add(s); parts.push({ s, age: rnd() * cfg.life, v: new THREE.Vector3(), p0: new THREE.Vector3() }); }
+      const spawn = (q) => {
+        const th = rnd() * Math.PI * 2, ph = cfg.surface ? rnd() * 1.1 : rnd() * 1.4;
+        const n = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.cos(ph), Math.sin(ph) * Math.sin(th));
+        q.p0.copy(n).multiplyScalar(R * (cfg.surface ? 0.98 : 0.9)); q.v.copy(n).multiplyScalar(cfg.out).add(new THREE.Vector3(0, cfg.up, 0)); q.age = 0;
+      };
+      parts.forEach(spawn); parts.forEach((q) => { q.age = rnd() * cfg.life; });
+      return (t, dt) => {
+        for (const q of parts) {
+          q.age += dt; if (q.age > cfg.life) spawn(q);
+          const f = q.age / cfg.life;
+          q.s.position.copy(q.p0).addScaledVector(q.v, q.age);
+          if (o.aura === 'wisps') q.s.position.x += Math.sin(t * 2 + q.p0.z * 20) * 0.04 * f;
+          q.s.scale.setScalar(cfg.size[0] + (cfg.size[1] - cfg.size[0]) * f);
+          q.s.material.opacity = (cfg.opacity ?? 1) * (o.aura === 'bubbles' ? (f < 0.85 ? 1 : 0) : Math.sin(Math.PI * Math.min(1, f)));
+        }
+      };
+    } },
+  { name: 'Rune Rings',
+    text: 'Glowing rings of runes turn around the orb, one per ingredient, tilted and counter-rotating. Doubled orbs get two rings of the same colour. Very magical and clean.',
+    cost: 'Very cheap: two textured rings per orb.',
+    build(o, g) {
+      const rings = o.parents.map((p, i) => {
+        const m = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.48, 64), new THREE.MeshBasicMaterial({ map: RUNES, color: bright(COL[p], 2.0 * (GLOW[p] || 1)), transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+        if (i === 1) m.scale.setScalar(0.86);
+        g.add(m); return m;
+      });
+      return (t) => {
+        rings[0].rotation.set(Math.PI / 2 - 0.75, 0, t * 0.8);
+        rings[1].rotation.set(Math.PI / 2 + 0.2, 0.9, -t * 1.1);
+      };
+    } },
+  { name: 'Breathing Shell',
+    text: 'A second, larger shell of light breathes in and out around the orb, with bands of the two ingredient colours swirling through it. Subtle and soft, like the orb can barely hold its power.',
+    cost: 'Cheap: one extra sphere with a small shader per orb.',
+    build(o, g) {
+      const mat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        uniforms: { t: { value: 0 }, a: { value: bright(COL[o.parents[0]], 1.6 * (GLOW[o.parents[0]] || 1)) }, b: { value: bright(COL[o.parents[1]], 1.6 * (GLOW[o.parents[1]] || 1)) } },
+        vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); vP = position; gl_Position = projectionMatrix*mv; }',
+        fragmentShader: 'uniform float t; uniform vec3 a; uniform vec3 b; varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ float fr = pow(1.0 - abs(dot(vN, vV)), 2.2); float band = 0.5 + 0.5*sin(vP.y*18.0 + atan(vP.z, vP.x)*3.0 - t*2.5); vec3 c = mix(a, b, band); float pulse = 0.75 + 0.25*sin(t*2.0); gl_FragColor = vec4(c, fr*pulse*0.95); }',
+      });
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.4, 48, 32), mat); g.add(shell);
+      return (t) => { mat.uniforms.t.value = t; shell.scale.setScalar(1 + Math.sin(t * 2) * 0.06); };
+    } },
+  { name: 'Twin Comets',
+    text: 'Two bright comets chase each other around the orb, leaving trails in the ingredient colours as they weave over and under it. The most dynamic: it feels fast and dangerous.',
+    cost: 'Cheap: two trail ribbons per orb.',
+    build(o, g) {
+      const trails = o.parents.map((p, i) => {
+        const pts = []; for (let j = 0; j <= 160; j++) { const u = j / 160, lon = u * Math.PI * 4 + i * Math.PI, lat = Math.sin(u * Math.PI * 2 * 1.5 + i) * 0.9; pts.push(new THREE.Vector3(Math.cos(lat) * Math.cos(lon) * 0.42, Math.sin(lat) * 0.42, Math.cos(lat) * Math.sin(lon) * 0.42)); }
+        const curve = new THREE.CatmullRomCurve3(pts, true);
+        const mat = new THREE.ShaderMaterial({
+          transparent: true, depthWrite: false,
+          uniforms: { t: { value: 0 }, c: { value: bright(COL[p], 1.5 * (GLOW[p] || 1)) } },
+          vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+          fragmentShader: 'uniform float t; uniform vec3 c; varying vec2 vUv; void main(){ float x = fract(vUv.x*2.0 - t*0.35); float head = smoothstep(0.0, 0.02, x) * pow(x, 3.0); gl_FragColor = vec4(c, head); }',
+        });
+        const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 320, 0.022, 8, true), mat); g.add(m); return mat;
+      });
+      return (t) => { for (const m of trails) m.uniforms.t.value = t; };
+    } },
+];
+
+// ---------------------------------------------------------------- shared scene
+function pedestal(scene, x, z) {
+  const pts = [new THREE.Vector2(0, 0)];
+  for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(0.34 + Math.cos(a) * 0.08, 0.08 + Math.sin(a) * 0.08)); }
+  for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(0.28 + Math.cos(a) * 0.08, 0.42 + Math.sin(a) * 0.08)); }
+  pts.push(new THREE.Vector2(0, 0.5));
+  const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 40), new THREE.MeshStandardMaterial({ color: 0xd6cdbb, roughness: 0.85 }));
+  m.position.set(x, 0, z); m.castShadow = m.receiveShadow = true; scene.add(m);
+}
+function makeCard(design) {
+  const card = document.createElement('article'); card.className = 'card';
+  card.innerHTML = `<div class="stage"><span class="tag">${design.name}</span></div><div class="notes"><h2>${design.name}</h2><p>${design.text}</p><p class="cost">${design.cost}</p></div>`;
+  document.getElementById('cards').append(card);
+  const stage = card.querySelector('.stage');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (e) { stage.insertAdjacentHTML('beforeend', '<div class="fallback">3D preview unavailable on this device.</div>'); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  stage.prepend(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xc9d3cf);
+  const camera = new THREE.PerspectiveCamera(30, 3 / 2, 0.1, 50);
+  camera.position.set(0, 4.6, 5.4); camera.lookAt(0, 0.45, 0.05);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x9bb38a, roughness: 0.95 }));
+  floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  const sun = new THREE.DirectionalLight(0xfff1de, 2.0); sun.position.set(4, 8, 5); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 }); scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xdfe8ec, 0x8f8574, 1.0));
+  const overlay = new THREE.Scene(), items = [];
+  ORBS.forEach((o, i) => {
+    const x = (i % 3 - 1) * 1.4, z = (Math.floor(i / 3) - 0.5) * 1.35;
+    pedestal(scene, x, z);
+    const g = new THREE.Group(); g.position.set(x, 0.95, z); scene.add(g);
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.27, 48, 32), new THREE.MeshStandardMaterial({ color: COL[o.k], emissive: COL[o.k], emissiveIntensity: 2.4 * (GLOW[o.k] || 1), roughness: 0.4 })));
+    const update = design.build(o, g);
+    const sym = new THREE.Sprite(new THREE.SpriteMaterial({ map: symbolTexture(o.k, DARK[o.k]), transparent: true, depthTest: false, depthWrite: false }));
+    sym.scale.setScalar(0.27 * 1.45); overlay.add(sym);
+    const offset = camera.position.clone().sub(g.position).normalize().multiplyScalar(0.28);
+    const light = new THREE.PointLight(COL[o.k], 0.6, 1.4); light.position.set(x, 0.95, z); scene.add(light);
+    items.push({ g, sym, offset, update, phase: i * 0.9 });
+  });
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 340), 0.75, 0.45, 1.0));
+  const symbols = new RenderPass(overlay, camera); symbols.clear = false; composer.addPass(symbols);
+  composer.addPass(new OutputPass());
+  const frame = (t, dt) => {
+    for (const it of items) { it.g.position.y = 0.95 + Math.sin(t * 1.6 + it.phase) * 0.035; it.update(t + it.phase, dt); it.sym.position.copy(it.g.position).add(it.offset); }
+    composer.render();
+  };
+  const resize = () => { const w = stage.clientWidth, h = Math.round(w * 2 / 3); renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); frame(performance.now() / 1000, 0.016); };
+  new ResizeObserver(resize).observe(stage); resize();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let visible = false, last = performance.now();
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting; }, { threshold: 0.05 }).observe(stage);
+  const loop = (now) => {
+    requestAnimationFrame(loop);
+    if (!visible || now - last < 30) return;
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    frame(now / 1000, dt);
+  };
+  if (!reduce) requestAnimationFrame(loop);
+}
+DESIGNS.forEach(makeCard);
+</script>
