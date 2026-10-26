@@ -1,0 +1,199 @@
+<title>Quiet Kingdom Look</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;600&display=swap">
+<style>
+  /* Layout: one fixed-camera diorama at full column width, then the toggles and notes. */
+  :root {
+    --bg: #c9d3cf; --card: #f3f1ea; --line: #c4c8bf; --fg: #2d2f2a; --muted: #6a6f66; --gold: #9a7a3a; --sage: #6e8f62;
+    --display: "Cinzel", Georgia, serif; --body: "Inter", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.5 var(--body); }
+  .wrap { max-width: 820px; margin: 0 auto; padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 14px; }
+  h1 { font: 700 24px/1.2 var(--display); letter-spacing: .04em; margin: 0; }
+  .intro { color: var(--muted); margin: 4px 0 0; max-width: 65ch; }
+  .stage { position: relative; aspect-ratio: 4 / 3.4; width: 100%; max-width: 100%; border-radius: 12px; overflow: hidden; background: #c9d3cf; box-shadow: 0 1px 0 rgba(0,0,0,.05); }
+  .stage canvas { display: block; width: 100% !important; height: 100% !important; }
+  .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toggle { font: 600 14px var(--body); padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  .toggle[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #fff; }
+  .toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .notes { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+  .notes h2 { font: 700 16px var(--display); margin: 0 0 6px; letter-spacing: .03em; }
+  .notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; max-width: 70ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Quiet Kingdom</h1>
+    <p class="intro">The chosen direction, refined: ambient occlusion, softly rounded (filleted) shapes instead of hard facets, a fixed camera and a larger 8 × 7 board.</p>
+  </header>
+  <div class="stage" id="stage"></div>
+  <div class="controls">
+    <button class="toggle" id="ao" aria-pressed="true">Ambient occlusion</button>
+    <button class="toggle" id="bloom" aria-pressed="true">Orb glow</button>
+  </div>
+  <section class="notes">
+    <h2>What changed</h2>
+    <ul>
+      <li>Ambient occlusion darkens the creases where things meet the ground: under wells, between tiles, at the foot of the tower. Toggle it above to compare.</li>
+      <li>Every block, tile and pillar now has rounded edges. Cylinders, roofs and trees are turned profiles with filleted rims, and everything is smooth-shaded instead of faceted.</li>
+      <li>The camera no longer moves, and the board grew from 7 × 6 to 8 × 7 tiles.</li>
+      <li>In the Godot build, ambient occlusion should be baked into the lighting or the models rather than computed live. Godot’s mobile renderer doesn’t do screen-space AO, and baking it is cheaper on battery and heat anyway.</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const P = { bg: 0xc9d3cf, grass: 0x9bb38a, grass2: 0x93ab83, cliff: 0x8f8574, cliff2: 0x7a7162, stone: 0xd6cdbb, stoneDark: 0xb7ad99, wood: 0x8c6a4a,
+  belt: 0x55505a, mark: 0xd9b46a, roof: 0x5f7387, leaf: 0x6e8f62, leaf2: 0x7d9c6e, trunk: 0x6b5442, goblin: 0x8fae6a, ogre: 0x8d7b9c, cloth: 0xe3dccb,
+  fire: 0xff8a3d, water: 0x58b4ff, earth: 0xd1a96a, magma: 0xff6a2a, glow: 2.2 };
+
+// Filleted profiles, turned on a lathe: a cylinder/cone whose top and bottom rims are rounded.
+function filletLathe(rBottom, rTop, h, fillet, segs = 32) {
+  const pts = [], f = Math.min(fillet, h / 2, rBottom, Math.max(rTop, 0.001));
+  pts.push(new THREE.Vector2(0, 0));
+  for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(rBottom - f + Math.cos(a) * f, f + Math.sin(a) * f)); }
+  if (rTop > 0.01) for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(rTop - f + Math.cos(a) * f, h - f + Math.sin(a) * f)); }
+  else for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.cos(a) * f * 0.6, h - f * 0.6 + Math.sin(a) * f * 0.6)); }
+  pts.push(new THREE.Vector2(0, h));
+  const g = new THREE.LatheGeometry(pts, segs); g.translate(0, -h / 2, 0); return g;
+}
+const rbox = (w, h, d, r = 0.06) => new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2, h / 2, d / 2));
+
+function buildScene() {
+  const scene = new THREE.Scene(), root = new THREE.Group();
+  scene.background = new THREE.Color(P.bg);
+  scene.fog = new THREE.Fog(P.bg, 24, 48);
+  scene.add(root);
+  const mat = (color, emissive = 0) => new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0, ...(emissive ? { emissive: color, emissiveIntensity: emissive } : {}) });
+  const add = (geo, color, x, y, z, o = {}) => {
+    const m = new THREE.Mesh(geo, mat(color, o.glow || 0));
+    m.position.set(x, y, z); if (o.rot) m.rotation.set(...o.rot); if (o.scale) m.scale.set(...o.scale);
+    m.castShadow = o.shadow !== false; m.receiveShadow = true; (o.parent || root).add(m); return m;
+  };
+  const W = 8, D = 7, tx = (x) => x - W / 2 + 0.5, tz = (z) => z - D / 2 + 0.5;
+  // island with rounded cliff layers
+  add(rbox(W + 0.25, 1.3, D + 0.25, 0.22), P.cliff, 0, -0.78, 0);
+  add(rbox(W - 0.5, 1.0, D - 0.5, 0.3), P.cliff2, 0, -1.8, 0);
+  for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) add(rbox(0.94, 0.3, 0.94, 0.07), (x + z) % 2 ? P.grass : P.grass2, tx(x), -0.03, tz(z), { shadow: false });
+  // belts
+  const belts = [[1, 6], [1, 5], [2, 5], [3, 5], [3, 4], [3, 3], [5, 6], [5, 5], [4, 5]];
+  for (const [x, z] of belts) {
+    add(rbox(0.84, 0.12, 0.84, 0.05), P.belt, tx(x), 0.16, tz(z), { shadow: false });
+    add(rbox(0.46, 0.04, 0.12, 0.02), P.mark, tx(x), 0.24, tz(z), { shadow: false });
+  }
+  // wells: filleted stone drums with glowing orbs
+  for (const [x, z, el] of [[1, 6, 'fire'], [3, 6, 'water'], [5, 6, 'earth']]) {
+    add(filletLathe(0.42, 0.38, 0.5, 0.1), P.stone, tx(x), 0.37, tz(z));
+    add(new THREE.TorusGeometry(0.34, 0.05, 10, 32), P.stoneDark, tx(x), 0.62, tz(z), { rot: [Math.PI / 2, 0, 0] });
+    add(new THREE.SphereGeometry(0.22, 32, 24), P[el], tx(x), 0.86, tz(z), { glow: P.glow, shadow: false });
+  }
+  // fuser cauldron
+  add(filletLathe(0.34, 0.44, 0.52, 0.12), 0x46414c, tx(3), 0.4, tz(3));
+  add(new THREE.TorusGeometry(0.42, 0.07, 12, 36), P.stoneDark, tx(3), 0.66, tz(3), { rot: [Math.PI / 2, 0, 0] });
+  add(new THREE.CylinderGeometry(0.36, 0.36, 0.03, 32), P.magma, tx(3), 0.68, tz(3), { glow: P.glow, shadow: false });
+  // ballista
+  const bx = tx(3), bz = tz(1.6);
+  add(rbox(0.72, 0.26, 0.72, 0.08), P.wood, bx, 0.27, bz);
+  add(rbox(0.17, 0.17, 0.95, 0.06), P.wood, bx, 0.5, bz - 0.1, { rot: [-0.35, 0, 0] });
+  add(rbox(1.05, 0.09, 0.09, 0.04), P.wood, bx, 0.58, bz - 0.36);
+  // magma orb in flight
+  add(new THREE.SphereGeometry(0.21, 32, 24), P.magma, tx(3.4), 1.7, tz(-0.6), { glow: P.glow * 1.3, shadow: false });
+  add(new THREE.SphereGeometry(0.12, 24, 16), P.fire, tx(3.2), 1.4, tz(0.0), { glow: P.glow, shadow: false });
+  add(new THREE.SphereGeometry(0.07, 16, 12), P.fire, tx(3.08), 1.12, tz(0.5), { glow: P.glow, shadow: false });
+  // tower and wall
+  add(filletLathe(0.66, 0.58, 1.7, 0.12), P.stone, tx(7), 0.82, tz(6));
+  add(filletLathe(0.82, 0.0, 1.0, 0.16), P.roof, tx(7), 2.15, tz(6));
+  add(rbox(0.42, 0.72, 3.4, 0.1), P.stoneDark, tx(7), 0.45, tz(3.7));
+  for (let i = 0; i < 5; i++) add(rbox(0.44, 0.24, 0.34, 0.07), P.stoneDark, tx(7), 0.92, tz(2.3) + i * 0.7);
+  // rounded trees and rocks
+  for (const [x, z, s] of [[0, 0, 1], [0.15, 1.35, 0.8], [7, 0, 0.9], [6.1, 0.25, 0.7], [0, 3.6, 0.75]]) {
+    add(filletLathe(0.1, 0.08, 0.42, 0.03, 16), P.trunk, tx(x), 0.33, tz(z));
+    add(filletLathe(0.46 * s, 0.0, 1.05 * s, 0.14 * s), P.leaf, tx(x), 0.55 + 0.52 * s, tz(z));
+    add(new THREE.SphereGeometry(0.2 * s, 24, 16), P.leaf2, tx(x) + 0.12 * s, 0.55 + 0.25 * s, tz(z) + 0.12 * s);
+  }
+  add(new THREE.SphereGeometry(0.3, 24, 16), P.stoneDark, tx(0.1), 0.2, tz(5.2), { scale: [1, 0.7, 0.9] });
+  add(new THREE.SphereGeometry(0.2, 24, 16), P.stone, tx(6.2), 0.15, tz(2.2), { scale: [1, 0.6, 1] });
+  // enemy terrace
+  add(rbox(W - 1, 0.42, 1.7, 0.16), P.cliff, 0, -0.2, -D / 2 - 1.25);
+  add(rbox(W - 1.2, 0.14, 1.5, 0.06), P.grass2, 0, 0.06, -D / 2 - 1.25, { shadow: false });
+  // ogre
+  const ogre = new THREE.Group(); ogre.position.set(1.6, 0.13, -D / 2 - 1.25); root.add(ogre);
+  add(new THREE.CapsuleGeometry(0.44, 0.55, 8, 24), P.ogre, 0, 0.78, 0, { parent: ogre });
+  add(new THREE.SphereGeometry(0.31, 32, 24), P.ogre, 0, 1.55, 0.05, { parent: ogre });
+  add(new THREE.TorusGeometry(0.43, 0.09, 12, 32), P.cloth, 0, 0.56, 0, { parent: ogre, rot: [Math.PI / 2, 0, 0] });
+  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.055, 16, 12), 0x1a1a1a, 0.11 * s, 1.6, 0.31, { parent: ogre, shadow: false });
+  add(filletLathe(0.12, 0.07, 0.95, 0.05, 16), P.wood, 0.58, 0.88, 0.15, { parent: ogre, rot: [0.3, 0, -0.4] });
+  // goblin
+  const gob = new THREE.Group(); gob.position.set(-1.8, 0.13, -D / 2 - 1.15); root.add(gob);
+  add(new THREE.CapsuleGeometry(0.23, 0.3, 8, 20), P.goblin, 0, 0.46, 0, { parent: gob });
+  add(new THREE.SphereGeometry(0.23, 32, 24), P.goblin, 0, 0.97, 0.03, { parent: gob });
+  for (const s of [-1, 1]) {
+    add(filletLathe(0.07, 0.0, 0.34, 0.03, 12), P.goblin, 0.25 * s, 1.04, 0, { parent: gob, rot: [0, 0, -1.3 * s] });
+    add(new THREE.SphereGeometry(0.04, 12, 8), 0x1a1a1a, 0.08 * s, 1.0, 0.21, { parent: gob, shadow: false });
+  }
+  add(filletLathe(0.2, 0.0, 0.26, 0.05, 20), P.roof, 0, 1.22, 0, { parent: gob });
+  for (const [g, w, y] of [[ogre, 0.9, 2.08], [gob, 0.6, 1.55]]) {
+    add(rbox(w, 0.09, 0.05, 0.03), 0x2a1a1a, 0, y, 0, { parent: g, shadow: false });
+    add(rbox(w * 0.7, 0.1, 0.06, 0.03), 0xe0405a, -w * 0.15, y, 0.01, { parent: g, shadow: false, glow: 0.3 });
+  }
+  // light
+  const sun = new THREE.DirectionalLight(0xfff1de, 2.3);
+  sun.position.set(6, 12, 7); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 40 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xdfe8ec, 0x8f8574, 1.0));
+  return scene;
+}
+
+const stage = document.getElementById('stage');
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+catch (e) { stage.innerHTML = '<div class="fallback">3D preview unavailable on this device.</div>'; throw e; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.append(renderer.domElement);
+const scene = buildScene();
+const camera = new THREE.PerspectiveCamera(30, 4 / 3.4, 0.5, 100);
+camera.position.set(0, 14.2, 11.6); camera.lookAt(0, -0.3, -1.05);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const ao = new GTAOPass(scene, camera, 800, 680);
+ao.updateGtaoMaterial({ radius: 1.4, distanceExponent: 1.2, thickness: 2.0, scale: 2.2, samples: 24 });
+ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+ao.blendIntensity = 1.0;
+composer.addPass(ao);
+const bloom = new UnrealBloomPass(new THREE.Vector2(512, 435), 0.5, 0.5, 0.82);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const draw = () => composer.render();
+const resize = () => { const w = stage.clientWidth, h = Math.round(w * 3.4 / 4); renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); draw(); };
+new ResizeObserver(resize).observe(stage);
+resize();
+for (const [id, pass] of [['ao', ao], ['bloom', bloom]]) {
+  const b = document.getElementById(id);
+  b.addEventListener('click', () => { pass.enabled = !pass.enabled; b.setAttribute('aria-pressed', String(pass.enabled)); draw(); });
+}
+</script>
