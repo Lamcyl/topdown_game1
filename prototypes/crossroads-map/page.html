@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crossroads Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* One phone-width column: status, the map, controls, then the panel for whatever is selected. Placeholder art only. */
+  :root {
+    --bg: #15131c; --panel: #201d2a; --line: #3a3549; --fg: #ece6d6; --muted: #a59fb3;
+    --gold: #e0b55c; --good: #6fcf8a; --bad: #e0627a; --warn: #e8a14a;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif; --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--fg); margin: 0; }
+  body { font: 15px/1.45 var(--body); }
+  .wrap { max-width: 560px; margin: 0 auto; padding-block: 10px 32px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+  #app { display: flex; flex-direction: column; gap: 8px; }
+  h1 { font: 700 20px/1.2 var(--display); letter-spacing: 0.05em; margin: 0; }
+  h2 { font: 700 16px/1.2 var(--display); margin: 0 0 6px; letter-spacing: 0.03em; }
+  h3 { font: 600 13px/1.2 var(--body); margin: 10px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  p { margin: 4px 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .hud { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+  .hud .gold { color: var(--gold); font-weight: 700; }
+  .hpbar { height: 10px; border-radius: 5px; background: #3a2230; overflow: hidden; position: relative; }
+  .hpbar > i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #c94a5e, #e0806a); border-radius: 5px; }
+  .chip { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fronts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .front { padding: 4px 6px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+  .front b { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .front .sub { font-size: 11px; }
+  .front.ok { border-color: #355c45; } .front.bad { border-color: var(--bad); background: #2c1a24; } .front.quiet { opacity: .6; }
+  .mapbox { position: relative; width: 100%; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #0c0a10; border: 1px solid var(--line); }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .toast { position: absolute; left: 8px; right: 8px; bottom: 8px; text-align: center; pointer-events: none; }
+  .toast span { display: inline-block; background: rgba(20,17,28,.88); border: 1px solid var(--line); padding: 4px 10px; border-radius: 8px; font-size: 13px; }
+  .btn { font: 600 14px var(--body); color: var(--fg); background: #2b2738; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 38px; }
+  .btn:hover:not(:disabled) { border-color: #5a5370; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: #4b3a17; border-color: var(--gold); color: #ffe7b0; }
+  .btn.small { padding: 4px 8px; min-height: 30px; font-size: 13px; }
+  .btn.on { border-color: var(--gold); color: var(--gold); }
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; }
+  .controls .grow { flex: 1; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .card .title { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .muted { color: var(--muted); }
+  .good { color: var(--good); } .bad { color: var(--bad); } .goldc { color: var(--gold); }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: #29253a; }
+  .item .info { font-size: 13px; color: var(--muted); }
+  select { font: 14px var(--body); background: #2b2738; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 36px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .legend { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 12px; font-size: 13px; margin-top: 6px; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.perm { color: var(--gold); border-color: #6b5527; }
+</style>
+</head>
+<body>
+<div class="wrap"><div id="app"></div></div>
+<script>
+/*LOGIC*/
+/*UI*/
+</script>
+</body>
+</html>
