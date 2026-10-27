@@ -1,0 +1,425 @@
+<title>Orbforge Tile Designs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;600&display=swap">
+<style>
+  /* Layout: one card per tile type; each card is a live 3D strip with three options (A, B, C) side by side, then the option notes. Quiet Kingdom palette. */
+  :root {
+    --bg: #c9d3cf; --card: #f3f1ea; --line: #c4c8bf; --fg: #2d2f2a; --muted: #6a6f66; --gold: #9a7a3a; --sage: #6e8f62;
+    --display: "Cinzel", Georgia, serif; --body: "Inter", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.5 var(--body); }
+  .wrap { max-width: 820px; margin: 0 auto; padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; }
+  h1 { font: 700 24px/1.2 var(--display); letter-spacing: .04em; margin: 0; }
+  .intro { color: var(--muted); margin: 4px 0 0; max-width: 65ch; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .stage { position: relative; aspect-ratio: 2 / 1; width: 100%; max-width: 100%; background: #c9d3cf; }
+  .stage canvas { display: block; width: 100% !important; height: 100% !important; }
+  .labels { position: absolute; left: 0; right: 0; bottom: 6px; display: grid; grid-template-columns: repeat(3, 1fr); pointer-events: none; }
+  .labels span { justify-self: center; font: 700 12px var(--display); letter-spacing: .06em; background: rgba(45,47,42,.72); color: #fff; padding: 3px 8px; border-radius: 4px; }
+  .notes { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .notes h2 { font: 700 18px var(--display); margin: 0; letter-spacing: .03em; }
+  .notes p { margin: 0; max-width: 68ch; }
+  .opts { margin: 0; padding-left: 0; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .opts li { min-width: 0; font-size: 13px; }
+  .opts b { display: block; font-family: var(--display); letter-spacing: .02em; }
+  @media (max-width: 560px) { .opts { grid-template-columns: 1fr; } }
+  .switch { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .switch button { font: 600 13px var(--body); padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--fg); cursor: pointer; }
+  .switch button[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #fff; }
+  .switch button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Tile Designs</h1>
+    <p class="intro">Three options for every tile you can place, in the Quiet Kingdom style. Each one sits on the board with short conveyors showing where orbs come in and go out. Pick one letter per tile; you can mix and match. The connecting belts use conveyor option A throughout, so the options are easy to compare.</p>
+  </header>
+  <div id="cards"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------------------------------------------------------------- shared materials and shapes
+const P = { grass: 0x9bb38a, grass2: 0x93ab83, stone: 0xd6cdbb, stoneDark: 0xb7ad99, slate: 0x8e8a86, wood: 0x8c6a4a, woodDark: 0x6e533a, iron: 0x4a4650,
+  brass: 0xc09a52, copper: 0xb87048, fire: 0xff7a2a, mana: 0x7fd6ff, gold: 0xf2c25a, green: 0x6fcf8a, red: 0xe0405a, roof: 0x5f7387, glass: 0xcfe9f5 };
+const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.8, metalness: o.metal ?? 0, ...(o.glow ? { emissive: color, emissiveIntensity: o.glow } : {}), ...(o.opacity ? { transparent: true, opacity: o.opacity, depthWrite: false } : {}) });
+const MAT = {};
+const M = (key, color, o) => (MAT[key] ||= mat(color, o));
+const rbox = (w, h, d, r = 0.05) => new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001));
+function lathe(rBottom, rTop, h, fillet, segs = 32) {
+  const pts = [], f = Math.min(fillet, h / 2, rBottom, Math.max(rTop, 0.001));
+  pts.push(new THREE.Vector2(0, 0));
+  for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(rBottom - f + Math.cos(a) * f, f + Math.sin(a) * f)); }
+  if (rTop > 0.01) for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(rTop - f + Math.cos(a) * f, h - f + Math.sin(a) * f)); }
+  else for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.cos(a) * f * 0.6, h - f * 0.6 + Math.sin(a) * f * 0.6)); }
+  pts.push(new THREE.Vector2(0, h));
+  const g = new THREE.LatheGeometry(pts, segs); g.translate(0, -h / 2, 0); return g;
+}
+function mesh(geo, material, x = 0, y = 0, z = 0, parent, rot) {
+  const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); if (rot) m.rotation.set(...rot);
+  m.castShadow = m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
+  return t;
+}
+const chevron = (g, w, h, color, lw) => { g.strokeStyle = color; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(w * 0.28, h * 0.66); g.lineTo(w * 0.5, h * 0.4); g.lineTo(w * 0.72, h * 0.66); g.stroke(); };
+// Scrolling textures (shared, animated once per frame)
+const TEX = {
+  belt: canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#52443c'; g.fillRect(0, 0, w, h); g.fillStyle = '#463a33'; for (let y = 0; y < h; y += 8) g.fillRect(0, y, w, 2); chevron(g, w, h, '#d9b46a', 6); }, [1, 2]),
+  mana: canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); chevron(g, w, h, '#ffffff', 7); }, [1, 2]),
+  plus: canvasTex(128, 128, (g) => { g.strokeStyle = '#fff'; g.lineWidth = 22; g.lineCap = 'round'; g.beginPath(); g.moveTo(64, 26); g.lineTo(64, 102); g.moveTo(26, 64); g.lineTo(102, 64); g.stroke(); }),
+  times: canvasTex(128, 128, (g) => { g.strokeStyle = '#fff'; g.lineWidth = 20; g.lineCap = 'round'; g.beginPath(); g.moveTo(34, 34); g.lineTo(94, 94); g.moveTo(94, 34); g.lineTo(34, 94); g.stroke(); }),
+  fork: canvasTex(128, 128, (g) => { g.strokeStyle = '#fff'; g.lineWidth = 12; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(64, 124); g.lineTo(64, 70); g.lineTo(10, 40); g.moveTo(64, 70); g.lineTo(118, 40); g.stroke(); }),
+  warn: canvasTex(128, 128, (g) => { g.lineJoin = 'round'; g.fillStyle = '#ffd24a'; g.strokeStyle = '#3a2a08'; g.lineWidth = 9; g.beginPath(); g.moveTo(64, 12); g.lineTo(120, 112); g.lineTo(8, 112); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#3a2a08'; g.fillRect(57, 44, 14, 40); g.beginPath(); g.arc(64, 98, 8, 0, Math.PI * 2); g.fill(); }),
+};
+const scrolling = [TEX.belt, TEX.mana];
+
+// ---------------------------------------------------------------- conveyors (built pointing "up", i.e. toward -z)
+function beltA(len = 1) {
+  const g = new THREE.Group();
+  mesh(rbox(0.92, 0.08, len, 0.03), M('wood', P.wood), 0, 0.04, 0, g);
+  const s = mesh(new THREE.PlaneGeometry(0.68, len), new THREE.MeshStandardMaterial({ map: TEX.belt, roughness: 0.9 }), 0, 0.09, 0, g, [-Math.PI / 2, 0, 0]); s.castShadow = false;
+  for (const x of [-0.42, 0.42]) mesh(rbox(0.1, 0.15, len, 0.04), M('wood', P.wood), x, 0.1, 0, g);
+  for (const z of [-len / 2 + 0.04, len / 2 - 0.04]) mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.72, 20), M('brass', P.brass, { metal: 0.6, rough: 0.35 }), 0, 0.09, z, g, [0, 0, Math.PI / 2]);
+  return g;
+}
+function beltB(len = 1) {
+  const g = new THREE.Group();
+  mesh(rbox(0.6, 0.06, len, 0.02), M('slate', P.slate), 0, 0.03, 0, g);
+  for (const x of [-0.37, 0.37]) mesh(rbox(0.16, 0.2, len, 0.06), M('stone', P.stone), x, 0.1, 0, g);
+  mesh(new THREE.PlaneGeometry(0.56, len), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.mana).multiplyScalar(1.6), map: TEX.mana, transparent: true, depthWrite: false }), 0, 0.075, 0, g, [-Math.PI / 2, 0, 0]);
+  mesh(new THREE.PlaneGeometry(0.56, len), new THREE.MeshStandardMaterial({ color: 0x3c6f88, emissive: 0x3c6f88, emissiveIntensity: 0.4, transparent: true, opacity: 0.6 }), 0, 0.068, 0, g, [-Math.PI / 2, 0, 0]);
+  return g;
+}
+function beltC(len = 1) {
+  const g = new THREE.Group();
+  mesh(rbox(0.82, 0.07, len, 0.03), M('stone', P.stone), 0, 0.035, 0, g);
+  mesh(rbox(0.66, 0.02, len, 0.01), M('stoneDark', P.stoneDark), 0, 0.075, 0, g);
+  const runes = [];
+  for (let i = 0; i < 2; i++) { const r = mesh(new THREE.PlaneGeometry(0.42, 0.42), new THREE.MeshBasicMaterial({ map: TEX.mana, color: new THREE.Color(P.gold).multiplyScalar(1.8), transparent: true, depthWrite: false, side: THREE.DoubleSide }), 0, 0.2, 0, g, [-Math.PI / 2, 0, 0]); r.castShadow = false; runes.push(r); }
+  g.userData.update = (t) => runes.forEach((r, i) => { const u = ((t * 0.45 + i / 2) % 1); r.position.z = len / 2 - u * len; r.position.y = 0.2 + Math.sin(t * 3 + i) * 0.03; r.material.opacity = Math.sin(Math.PI * u); });
+  return g;
+}
+// Place a conveyor stub of length len, its centre offset toward a side, pointing in direction dir.
+const DIRV = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+const DIRANG = { n: 0, w: Math.PI / 2, s: Math.PI, e: -Math.PI / 2 };
+function stub(parent, side, flow, len = 0.55) {
+  // side: which edge of the tile; flow: 'in' moves toward the tile centre, 'out' moves away from it
+  const [vx, vz] = DIRV[side], b = beltA(len), d = 0.5 + len / 2;
+  b.position.set(vx * d, 0, vz * d);
+  b.rotation.y = flow === 'out' ? DIRANG[side] : DIRANG[{ n: 's', s: 'n', e: 'w', w: 'e' }[side]];
+  parent.add(b); return b;
+}
+
+// ---------------------------------------------------------------- orb (Glowing Core)
+function orb(parent, color, r = 0.2, y = 0.6) {
+  const o = mesh(new THREE.SphereGeometry(r, 32, 24), mat(color, { glow: 2.4, rough: 0.4 }), 0, y, 0, parent); o.castShadow = true;
+  const l = new THREE.PointLight(color, 0.5, 1.4); l.position.set(0, y, 0); parent.add(l); return o;
+}
+
+// ---------------------------------------------------------------- the designs: each returns a Group on one tile (y=0 is the board top)
+const glowMat = (tex, color, k = 1.8) => new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(color).multiplyScalar(k), transparent: true, depthWrite: false, side: THREE.DoubleSide });
+const D = {
+  belt: [
+    { name: 'Wooden Trough', note: 'Leather belt on brass rollers between wooden rails. Clearly a machine; easy to read direction from the chevrons.', build() { const g = new THREE.Group(); g.add(beltA(1)); const b2 = beltA(1); b2.position.z = -1; g.add(b2); return g; } },
+    { name: 'Mana Channel', note: 'A carved stone channel with a stream of glowing mana flowing through it. More magical, and the flow glows at dusk.', build() { const g = new THREE.Group(); g.add(beltB(1)); const b2 = beltB(1); b2.position.z = -1; g.add(b2); return g; } },
+    { name: 'Rune Track', note: 'Flat stone slabs with golden rune arrows gliding just above them. The lightest, cleanest look.', build() { const g = new THREE.Group(); const a = beltC(1), b = beltC(1); b.position.z = -1; g.add(a, b); g.userData.update = (t) => { a.userData.update(t); b.userData.update(t + 0.5); }; return g; } },
+  ],
+  well: [
+    { name: 'Stone Font', note: 'A rounded stone drum with the orb floating above and a little chute toward its output.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.4, 0.36, 0.42, 0.1), M('stone', P.stone), 0, 0.21, 0, g);
+      mesh(new THREE.TorusGeometry(0.33, 0.05, 10, 32), M('stoneDark', P.stoneDark), 0, 0.42, 0, g, [Math.PI / 2, 0, 0]);
+      mesh(rbox(0.26, 0.1, 0.3, 0.04), M('stoneDark', P.stoneDark), 0, 0.2, -0.42, g); const o = orb(g, P.fire, 0.2, 0.66);
+      g.userData.update = (t) => { o.position.y = 0.66 + Math.sin(t * 2) * 0.04; }; return g; } },
+    { name: 'Spring Shrine', note: 'A tiny roofed shrine with the orb hanging inside, like a holy spring. More architectural and medieval.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.8, 0.12, 0.8, 0.05), M('stone', P.stone), 0, 0.06, 0, g);
+      for (const x of [-0.3, 0.3]) for (const z of [-0.3, 0.3]) mesh(lathe(0.06, 0.05, 0.6, 0.02, 16), M('stone', P.stone), x, 0.42, z, g);
+      const roof = mesh(new THREE.ConeGeometry(0.62, 0.36, 4), M('roof', P.roof), 0, 0.9, 0, g); roof.rotation.y = Math.PI / 4;
+      const o = orb(g, P.fire, 0.17, 0.44); g.userData.update = (t) => { o.position.y = 0.44 + Math.sin(t * 2) * 0.03; }; return g; } },
+    { name: 'Crystal Geode', note: 'A cracked boulder full of glowing crystals with the orb nested inside. Wild and natural.', build() {
+      const g = new THREE.Group(); const rock = mesh(new THREE.DodecahedronGeometry(0.42, 1), M('slate', P.slate), 0, 0.12, 0, g); rock.scale.set(1, 0.55, 1);
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const c = mesh(new THREE.ConeGeometry(0.06, 0.32, 6), mat(P.fire, { glow: 1.2, rough: 0.3 }), Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.22, g); c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5); }
+      const o = orb(g, P.fire, 0.18, 0.5); g.userData.update = (t) => { o.position.y = 0.5 + Math.sin(t * 2) * 0.03; }; return g; } },
+  ],
+  mixer: [
+    { name: 'Cauldron', note: 'An iron cauldron on short legs, bubbling. Inputs are wide funnels, the output a narrow spout.', build: (ports) => mixerBody('cauldron', ports) },
+    { name: 'Alembic', note: 'A glass flask on a stand with copper pipes, an alchemist’s still. The most alchemical; you can see the mix inside.', build: (ports) => mixerBody('alembic', ports) },
+    { name: 'Mixing Basin', note: 'A stone basin with a turning paddle. Sturdy and simple; the paddle shows it is working.', build: (ports) => mixerBody('basin', ports) },
+  ],
+  amp: [
+    { name: 'Rune Anvil', note: 'An anvil with a glowing plus rune on top. Orbs are struck as they pass: +3.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.5, 0.24, 0.36, 0.05), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), 0, 0.12, 0, g); mesh(rbox(0.7, 0.14, 0.4, 0.05), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), 0, 0.31, 0, g);
+      const h = mesh(new THREE.ConeGeometry(0.1, 0.3, 16), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), 0.48, 0.31, 0, g); h.rotation.z = -Math.PI / 2;
+      const r = mesh(new THREE.PlaneGeometry(0.34, 0.34), glowMat(TEX.plus, P.gold, 2.2), 0, 0.39, 0, g, [-Math.PI / 2, 0, 0]); r.castShadow = false;
+      g.userData.update = (t) => { r.material.opacity = 0.7 + Math.sin(t * 3) * 0.3; }; return g; } },
+    { name: 'Rune Gate', note: 'A small stone arch the orbs pass under, with a glowing plus hanging from it.', build() {
+      const g = new THREE.Group(); for (const x of [-0.36, 0.36]) mesh(rbox(0.16, 0.62, 0.2, 0.05), M('stone', P.stone), x, 0.31, 0, g);
+      mesh(new THREE.TorusGeometry(0.36, 0.08, 12, 24, Math.PI), M('stone', P.stone), 0, 0.62, 0, g);
+      const s = mesh(new THREE.PlaneGeometry(0.26, 0.26), glowMat(TEX.plus, P.gold, 2.2), 0, 0.62, 0.02, g); s.castShadow = false;
+      g.userData.update = (t) => { s.rotation.z = Math.sin(t * 1.5) * 0.15; }; return g; } },
+    { name: 'Mana Ring', note: 'A floating brass ring the orbs fly through, turning slowly, with a plus glyph at its heart.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.2, 0.16, 0.12, 0.04), M('stone', P.stone), 0, 0.06, 0, g);
+      const ring = mesh(new THREE.TorusGeometry(0.3, 0.05, 12, 40), M('brass', P.brass, { metal: 0.7, rough: 0.3 }), 0, 0.52, 0, g);
+      const s = mesh(new THREE.PlaneGeometry(0.24, 0.24), glowMat(TEX.plus, P.gold, 2.2), 0, 0.52, 0, g); s.castShadow = false;
+      g.userData.update = (t) => { ring.rotation.y = Math.sin(t) * 0.5; s.position.y = ring.position.y = 0.52 + Math.sin(t * 2) * 0.03; }; return g; } },
+  ],
+  lens: [
+    { name: 'Great Lens', note: 'A brass-rimmed lens standing across the path, like a magnifying glass. Orbs pass through and come out doubled: ×2.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.5, 0.12, 0.3, 0.05), M('wood', P.wood), 0, 0.06, 0, g); mesh(rbox(0.08, 0.3, 0.08, 0.03), M('wood', P.wood), 0, 0.25, 0, g);
+      mesh(new THREE.TorusGeometry(0.28, 0.045, 12, 40), M('brass', P.brass, { metal: 0.7, rough: 0.3 }), 0, 0.66, 0, g);
+      const glass = mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.04, 40), new THREE.MeshStandardMaterial({ color: P.glass, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.45, emissive: P.mana, emissiveIntensity: 0.25 }), 0, 0.66, 0, g, [Math.PI / 2, 0, 0]);
+      g.userData.update = (t) => { glass.material.emissiveIntensity = 0.2 + Math.sin(t * 2) * 0.15; }; return g; } },
+    { name: 'Crystal Prism', note: 'A softly glowing three-sided crystal on a stone base, turning slowly. Orbs pass through and split their light into double.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.3, 0.26, 0.14, 0.05), M('stone', P.stone), 0, 0.07, 0, g);
+      const p = mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.5, 3, 1), mat(0xb9a6ff, { glow: 0.9, rough: 0.15, metal: 0.1 }), 0, 0.42, 0, g);
+      const tag = mesh(new THREE.PlaneGeometry(0.2, 0.2), glowMat(TEX.times, 0xffffff, 1.6), 0, 0.82, 0, g); tag.castShadow = false;
+      g.userData.update = (t) => { p.rotation.y = t * 0.6; tag.position.y = 0.82 + Math.sin(t * 2) * 0.03; }; return g; } },
+    { name: 'Twin Moons', note: 'A floating lens with two small moons orbiting it: one orb in, two orbs’ worth out.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.2, 0.16, 0.12, 0.04), M('stone', P.stone), 0, 0.06, 0, g);
+      const lens = mesh(new THREE.SphereGeometry(0.2, 32, 16), new THREE.MeshStandardMaterial({ color: P.glass, roughness: 0.05, transparent: true, opacity: 0.55, emissive: P.mana, emissiveIntensity: 0.4 }), 0, 0.55, 0, g); lens.scale.set(1, 1, 0.35);
+      const moons = [0, 1].map(() => mesh(new THREE.SphereGeometry(0.06, 16, 12), mat(0xfff3c8, { glow: 1.6 }), 0, 0.55, 0, g));
+      g.userData.update = (t) => moons.forEach((m, i) => { const a = t * 1.6 + i * Math.PI; m.position.set(Math.cos(a) * 0.32, 0.55 + Math.sin(a) * 0.08, Math.sin(a) * 0.32); }); return g; } },
+  ],
+  splitter: [
+    { name: 'Flip Gate', note: 'A wooden Y-junction with a paddle that flips left, then right, sending orbs each way in turn.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.86, 0.1, 0.86, 0.04), M('wood', P.wood), 0, 0.05, 0, g);
+      mesh(lathe(0.07, 0.06, 0.18, 0.02, 16), M('brass', P.brass, { metal: 0.6, rough: 0.35 }), 0, 0.19, 0.05, g);
+      const pad = new THREE.Group(); pad.position.set(0, 0.2, 0.05); g.add(pad); mesh(rbox(0.06, 0.16, 0.5, 0.03), M('woodDark', P.woodDark), 0, 0, -0.22, pad);
+      g.userData.update = (t) => { const side = Math.floor(t / 1.4) % 2 ? 1 : -1; pad.rotation.y += (side * 0.7 - pad.rotation.y) * 0.15; }; return g; } },
+    { name: 'Turntable', note: 'A round stone turntable with a groove that swings to the left output, then the right.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.44, 0.42, 0.12, 0.04), M('stone', P.stone), 0, 0.06, 0, g);
+      const top = new THREE.Group(); top.position.y = 0.13; g.add(top);
+      mesh(lathe(0.38, 0.36, 0.06, 0.02), M('stoneDark', P.stoneDark), 0, 0, 0, top);
+      for (const x of [-0.12, 0.12]) mesh(rbox(0.06, 0.07, 0.7, 0.02), M('brass', P.brass, { metal: 0.6, rough: 0.35 }), x, 0.05, 0, top);
+      g.userData.update = (t) => { const side = Math.floor(t / 1.4) % 2 ? 1 : -1; top.rotation.y += (side * Math.PI / 4 - top.rotation.y) * 0.12; }; return g; } },
+    { name: 'Forked Rune', note: 'A stone slab carved with a glowing Y. The branch that will receive the next orb glows brighter.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.86, 0.1, 0.86, 0.04), M('stone', P.stone), 0, 0.05, 0, g);
+      const r = mesh(new THREE.PlaneGeometry(0.8, 0.8), glowMat(TEX.fork, P.gold, 2.0), 0, 0.105, 0, g, [-Math.PI / 2, 0, Math.PI]); r.castShadow = false;
+      const pips = [-1, 1].map((s) => mesh(new THREE.SphereGeometry(0.06, 16, 12), mat(P.gold, { glow: 2 }), s * 0.36, 0.15, -0.0, g));
+      g.userData.update = (t) => { const side = Math.floor(t / 1.4) % 2; pips.forEach((p, i) => { p.material.emissiveIntensity = i === side ? 3 : 0.3; }); }; return g; } },
+  ],
+  delay: [
+    { name: 'Hourglass', note: 'An hourglass in a wooden frame that flips as an orb waits: 2 beats.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.6, 0.08, 0.5, 0.03), M('wood', P.wood), 0, 0.04, 0, g);
+      const glassG = new THREE.Group(); glassG.position.y = 0.48; g.add(glassG);
+      for (const s of [-1, 1]) { mesh(rbox(0.5, 0.06, 0.4, 0.03), M('wood', P.wood), 0, s * 0.33, 0, glassG); }
+      for (const x of [-0.2, 0.2]) mesh(lathe(0.035, 0.035, 0.66, 0.015, 12), M('woodDark', P.woodDark), x, 0, 0, glassG);
+      for (const s of [-1, 1]) { const c = mesh(new THREE.ConeGeometry(0.15, 0.28, 24), new THREE.MeshStandardMaterial({ color: P.glass, transparent: true, opacity: 0.5, roughness: 0.05 }), 0, s * 0.15, 0, glassG); c.rotation.x = s > 0 ? Math.PI : 0; }
+      const sand = mesh(new THREE.ConeGeometry(0.1, 0.12, 20), mat(0xe2c27a), 0, -0.2, 0, glassG);
+      g.userData.update = (t) => { const ph = (t % 3) / 3; glassG.rotation.z = ph > 0.85 ? (ph - 0.85) / 0.15 * Math.PI : 0; sand.scale.setScalar(0.5 + ph * 0.6); }; return g; } },
+    { name: 'Spiral Coil', note: 'A copper coil wrapped round a post. Orbs ride up the spiral and come out the top, two beats later.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.3, 0.26, 0.1, 0.04), M('stone', P.stone), 0, 0.05, 0, g);
+      mesh(lathe(0.07, 0.06, 0.7, 0.03, 16), M('woodDark', P.woodDark), 0, 0.45, 0, g);
+      const pts = []; for (let i = 0; i <= 120; i++) { const u = i / 120, a = u * Math.PI * 6; pts.push(new THREE.Vector3(Math.cos(a) * 0.24, 0.14 + u * 0.62, Math.sin(a) * 0.24)); }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      mesh(new THREE.TubeGeometry(curve, 240, 0.03, 10), M('copper', P.copper, { metal: 0.7, rough: 0.3 }), 0, 0, 0, g);
+      const o = mesh(new THREE.SphereGeometry(0.07, 16, 12), mat(P.fire, { glow: 2.4 }), 0, 0, 0, g);
+      g.userData.update = (t) => { o.position.copy(curve.getPointAt((t * 0.35) % 1)); }; return g; } },
+    { name: 'Clockwork', note: 'Turning brass gears and a small bell that rings when the orb is released.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.7, 0.1, 0.5, 0.04), M('wood', P.wood), 0, 0.05, 0, g);
+      const gear = (r, x, y, z, teeth) => { const gg = new THREE.Group(); gg.position.set(x, y, z); g.add(gg); mesh(new THREE.CylinderGeometry(r, r, 0.06, 32), M('brass', P.brass, { metal: 0.7, rough: 0.3 }), 0, 0, 0, gg, [Math.PI / 2, 0, 0]); for (let i = 0; i < teeth; i++) { const a = (i / teeth) * Math.PI * 2; mesh(rbox(0.06, 0.06, 0.06, 0.015), M('brass', P.brass, { metal: 0.7, rough: 0.3 }), Math.cos(a) * r, Math.sin(a) * r, 0, gg); } return gg; };
+      const g1 = gear(0.2, -0.12, 0.38, 0, 10), g2 = gear(0.12, 0.2, 0.3, 0.02, 7);
+      const bell = mesh(lathe(0.1, 0.03, 0.14, 0.03, 20), M('brass', P.brass, { metal: 0.7, rough: 0.3 }), 0.22, 0.62, -0.05, g); bell.rotation.x = Math.PI;
+      g.userData.update = (t) => { g1.rotation.z = t * 0.8; g2.rotation.z = -t * 1.33; bell.rotation.z = (t % 2 < 0.3) ? Math.sin(t * 40) * 0.25 : 0; }; return g; } },
+  ],
+  launcher: [
+    { name: 'Ballista', note: 'A wooden ballista on a rounded base, a pennant showing which enemy it aims at.', build() {
+      const g = new THREE.Group(); mesh(rbox(0.7, 0.24, 0.7, 0.08), M('wood', P.wood), 0, 0.12, 0, g);
+      mesh(rbox(0.16, 0.16, 0.9, 0.06), M('wood', P.wood), 0, 0.36, -0.08, g, [-0.3, 0, 0]);
+      mesh(rbox(1.0, 0.08, 0.08, 0.035), M('woodDark', P.woodDark), 0, 0.44, -0.34, g);
+      mesh(lathe(0.02, 0.02, 0.5, 0.01, 8), M('woodDark', P.woodDark), 0.3, 0.45, 0.2, g);
+      const flag = mesh(new THREE.PlaneGeometry(0.24, 0.14), new THREE.MeshStandardMaterial({ color: P.red, side: THREE.DoubleSide }), 0.42, 0.62, 0.2, g);
+      g.userData.update = (t) => { flag.rotation.y = Math.sin(t * 3) * 0.3; }; return g; } },
+    { name: 'Mage Turret', note: 'A small round stone turret topped with a floating crystal that fires the orb as a bolt of light.', build() {
+      const g = new THREE.Group(); mesh(lathe(0.38, 0.32, 0.6, 0.08), M('stone', P.stone), 0, 0.3, 0, g);
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; mesh(rbox(0.12, 0.12, 0.12, 0.03), M('stone', P.stone), Math.cos(a) * 0.3, 0.64, Math.sin(a) * 0.3, g); }
+      const c = mesh(new THREE.OctahedronGeometry(0.16, 0), mat(0x7fe3d0, { glow: 1.8, rough: 0.2 }), 0, 0.9, 0, g); c.scale.set(1, 1.5, 1);
+      g.userData.update = (t) => { c.rotation.y = t; c.position.y = 0.9 + Math.sin(t * 2) * 0.04; }; return g; } },
+    { name: 'Catapult', note: 'A little wooden catapult that lobs the orb in an arc, with the orb waiting in its bucket.', build() {
+      const g = new THREE.Group(); for (const x of [-0.28, 0.28]) mesh(rbox(0.1, 0.12, 0.8, 0.04), M('wood', P.wood), x, 0.06, 0, g);
+      for (const x of [-0.28, 0.28]) mesh(rbox(0.08, 0.42, 0.08, 0.03), M('wood', P.wood), x, 0.3, 0.05, g);
+      mesh(lathe(0.03, 0.03, 0.62, 0.01, 10), M('woodDark', P.woodDark), 0, 0.46, 0.05, g, [0, 0, Math.PI / 2]);
+      const arm = new THREE.Group(); arm.position.set(0, 0.46, 0.05); g.add(arm);
+      mesh(rbox(0.07, 0.07, 0.7, 0.03), M('woodDark', P.woodDark), 0, 0, -0.2, arm);
+      const bucket = mesh(new THREE.SphereGeometry(0.11, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M('woodDark', P.woodDark), 0, 0.02, -0.52, arm); bucket.material.side = THREE.DoubleSide;
+      orb(arm, P.fire, 0.08, 0.04).position.z = -0.52;
+      g.userData.update = (t) => { arm.rotation.x = -0.25 + Math.sin(t * 1.2) * 0.12; }; return g; } },
+  ],
+};
+
+// Mixer bodies with input funnels (green bands) and an output spout (gold band); jammed mixers glow red with a warning.
+function mixerBody(kind, ports = { inputs: ['w', 'e'], out: 'n', jammed: false }) {
+  const g = new THREE.Group(), upd = [];
+  if (kind === 'cauldron') {
+    for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2 + 0.5; mesh(lathe(0.04, 0.03, 0.18, 0.015, 10), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), Math.cos(a) * 0.2, 0.09, Math.sin(a) * 0.2, g); }
+    mesh(lathe(0.26, 0.36, 0.42, 0.12), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), 0, 0.36, 0, g);
+    mesh(new THREE.TorusGeometry(0.35, 0.05, 12, 40), M('iron', P.iron, { metal: 0.5, rough: 0.5 }), 0, 0.57, 0, g, [Math.PI / 2, 0, 0]);
+    const liquid = mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.02, 32), mat(ports.jammed ? 0x8a2a2a : 0xff8a3d, { glow: ports.jammed ? 0.4 : 1.4 }), 0, 0.575, 0, g);
+    const bubbles = [0, 1, 2].map(() => mesh(new THREE.SphereGeometry(0.04, 12, 8), mat(0xffc07a, { glow: 1.5 }), 0, 0.6, 0, g));
+    upd.push((t) => bubbles.forEach((b, i) => { const ph = (t * 0.8 + i / 3) % 1; b.position.set(Math.cos(i * 2.1) * 0.15, 0.58 + ph * 0.08, Math.sin(i * 2.1) * 0.15); b.scale.setScalar(ports.jammed ? 0.001 : 1 - ph); }));
+    void liquid;
+  } else if (kind === 'alembic') {
+    mesh(rbox(0.6, 0.1, 0.6, 0.04), M('wood', P.wood), 0, 0.05, 0, g);
+    for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2; mesh(lathe(0.025, 0.025, 0.3, 0.01, 8), M('brass', P.brass, { metal: 0.6, rough: 0.35 }), Math.cos(a) * 0.22, 0.24, Math.sin(a) * 0.22, g); }
+    mesh(new THREE.SphereGeometry(0.27, 32, 24), new THREE.MeshStandardMaterial({ color: P.glass, roughness: 0.05, transparent: true, opacity: 0.4 }), 0, 0.5, 0, g);
+    const inner = mesh(new THREE.SphereGeometry(0.17, 24, 16), mat(ports.jammed ? 0x8a2a2a : 0xff8a3d, { glow: ports.jammed ? 0.3 : 1.6 }), 0, 0.45, 0, g);
+    mesh(lathe(0.08, 0.05, 0.24, 0.03, 16), new THREE.MeshStandardMaterial({ color: P.glass, roughness: 0.05, transparent: true, opacity: 0.45 }), 0, 0.84, 0, g);
+    upd.push((t) => { inner.scale.setScalar(ports.jammed ? 0.9 : 1 + Math.sin(t * 3) * 0.06); });
+  } else {
+    mesh(lathe(0.42, 0.36, 0.38, 0.1), M('stone', P.stone), 0, 0.19, 0, g);
+    mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 32), mat(ports.jammed ? 0x8a2a2a : 0x9a7650, { glow: ports.jammed ? 0.3 : 0.6 }), 0, 0.36, 0, g);
+    const paddle = new THREE.Group(); paddle.position.y = 0.36; g.add(paddle);
+    mesh(lathe(0.03, 0.03, 0.5, 0.015, 10), M('woodDark', P.woodDark), 0, 0.22, 0, paddle);
+    mesh(rbox(0.36, 0.1, 0.04, 0.02), M('wood', P.wood), 0.0, 0.02, 0, paddle);
+    upd.push((t) => { paddle.rotation.y = ports.jammed ? 0 : t * 1.4; });
+  }
+  // ports
+  const band = (color) => mat(color, { glow: ports.jammed && color === P.green ? 0 : 0.9, rough: 0.4 });
+  for (const side of ports.inputs) {
+    const [vx, vz] = DIRV[side], p = new THREE.Group(); p.position.set(vx * 0.38, kind === 'basin' ? 0.3 : 0.48, vz * 0.38); p.rotation.y = DIRANG[side]; g.add(p);
+    const fun = mesh(lathe(0.07, 0.17, 0.2, 0.03, 24), M('copper', P.copper, { metal: 0.6, rough: 0.35 }), 0, 0, -0.06, p, [-Math.PI / 2 + 0.6, 0, 0]);
+    mesh(new THREE.TorusGeometry(0.16, 0.025, 8, 28), ports.jammed ? mat(P.red, { glow: 1.6 }) : band(P.green), 0, 0.08, -0.12, fun.parent === p ? p : p, [-Math.PI / 2 + 0.6, 0, 0]);
+  }
+  if (ports.out) {
+    const [vx, vz] = DIRV[ports.out], p = new THREE.Group(); p.position.set(vx * 0.36, kind === 'basin' ? 0.22 : 0.3, vz * 0.36); p.rotation.y = DIRANG[ports.out]; g.add(p);
+    mesh(lathe(0.07, 0.06, 0.26, 0.02, 20), M('brass', P.brass, { metal: 0.6, rough: 0.35 }), 0, 0, -0.1, p, [Math.PI / 2, 0, 0]);
+    mesh(new THREE.TorusGeometry(0.075, 0.022, 8, 24), band(P.gold), 0, 0, -0.22, p);
+    mesh(new THREE.ConeGeometry(0.06, 0.12, 16), mat(P.gold, { glow: 1.2 }), 0, 0.16, -0.18, p, [-Math.PI / 2, 0, 0]);
+  }
+  if (ports.jammed) {
+    const w = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.warn, depthTest: false, transparent: true })); w.scale.setScalar(0.34); w.position.y = 1.25; w.renderOrder = 10; g.add(w);
+    const l = new THREE.PointLight(P.red, 1.2, 1.4); l.position.y = 0.6; g.add(l);
+    upd.push((t) => { w.position.y = 1.25 + Math.sin(t * 4) * 0.04; });
+  }
+  g.userData.update = (t) => upd.forEach((f) => f(t));
+  return g;
+}
+
+// ---------------------------------------------------------------- cards
+const CARDS = [
+  { key: 'belt', title: 'Conveyor', text: 'Carries orbs one tile per beat. Free and unlimited, so it will cover most of the board: it must read clearly at a glance and stay calm.', io: { in: [], out: [] } },
+  { key: 'well', title: 'Well', text: 'Holds a stage’s orbs of one element and releases one every 2 beats out of its output side.', io: { in: [], out: ['n'] } },
+  { key: 'mixer', title: 'Mixer', text: 'Takes up to two inputs and sends the mix out one side. Inputs are wide funnels with green bands; the output is a narrow spout with a gold band and arrow, so the three sides are easy to tell apart. The funnels and spout appear only on sides that have conveyors connected.', io: { in: ['w', 'e'], out: ['n'] }, spacing: 3.2 },
+  { key: 'amp', title: 'Amplifier (+3)', text: 'Adds 3 power to every orb that passes through.', io: { in: ['s'], out: ['n'] } },
+  { key: 'lens', title: 'Prism Lens (×2)', text: 'Doubles the power of every orb that passes through.', io: { in: ['s'], out: ['n'] } },
+  { key: 'splitter', title: 'Splitter', text: 'Sends orbs out to its left, then its right, in turn. The animation shows which side is next.', io: { in: ['s'], out: ['w', 'e'] }, spacing: 3.2 },
+  { key: 'delay', title: 'Delay Coil', text: 'Holds each orb for 2 beats to change the order of hits.', io: { in: ['s'], out: ['n'] } },
+  { key: 'launcher', title: 'Launcher', text: 'Fires every orb that enters it at its chosen enemy.', io: { in: ['s'], out: [] } },
+];
+
+function makeStage(container, populate, spacing = 3.0) {
+  const stage = document.createElement('div'); stage.className = 'stage'; container.append(stage);
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (e) { stage.innerHTML = '<div class="fallback">3D preview unavailable on this device.</div>'; return null; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  stage.prepend(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xc9d3cf);
+  const camera = new THREE.PerspectiveCamera(30, 2, 0.1, 60);
+  const sun = new THREE.DirectionalLight(0xfff1de, 2.2); sun.position.set(4, 9, 6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 1024);
+  Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 4, bottom: -4 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xdfe8ec, 0x8f8574, 1.0));
+  const ctx = { scene, updates: [], spacing };
+  populate(ctx);
+  const width = spacing * 3;
+  // Camera views: the whole strip, or a close-up on option 0, 1 or 2.
+  const views = [{ pos: [0, width * 0.7, width * 0.6], look: [0, 0.15, -0.05] }, ...[0, 1, 2].map((i) => ({ pos: [(i - 1) * spacing, 3.0, 3.1], look: [(i - 1) * spacing, 0.3, -0.15] }))];
+  const cam = { pos: new THREE.Vector3(...views[0].pos), look: new THREE.Vector3(...views[0].look), goalPos: new THREE.Vector3(...views[0].pos), goalLook: new THREE.Vector3(...views[0].look) };
+  const aim = () => { camera.position.copy(cam.pos); camera.lookAt(cam.look); };
+  aim();
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 256), 0.55, 0.4, 1.0));
+  composer.addPass(new OutputPass());
+  const frame = (t) => { cam.pos.lerp(cam.goalPos, 0.18); cam.look.lerp(cam.goalLook, 0.18); aim(); for (const u of ctx.updates) u(t); composer.render(); };
+  const resize = () => { const w = stage.clientWidth, h = Math.round(w / 2); renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); frame(performance.now() / 1000); };
+  new ResizeObserver(resize).observe(stage); resize();
+  let visible = false, last = 0;
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting; }, { threshold: 0.05 }).observe(stage);
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const loop = (now) => { requestAnimationFrame(loop); if (!visible || now - last < 33) return; last = now; frame(now / 1000); };
+    requestAnimationFrame(loop);
+  }
+  const setView = (i) => {
+    cam.goalPos.set(...views[i].pos); cam.goalLook.set(...views[i].look);
+    if (!visible || matchMedia('(prefers-reduced-motion: reduce)').matches) { cam.pos.copy(cam.goalPos); cam.look.copy(cam.goalLook); frame(performance.now() / 1000); }
+  };
+  return { stage, ctx, setView, rebuild: (fn) => { for (let i = scene.children.length - 1; i >= 0; i--) { const c = scene.children[i]; if (c.userData.slot) scene.remove(c); } ctx.updates.length = 0; fn(ctx); frame(performance.now() / 1000); } };
+}
+function groundPatch(ctx, x, w = 3, d = 3) {
+  const g = new THREE.Group(); g.position.x = x; g.userData.slot = true; ctx.scene.add(g);
+  for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) mesh(rbox(0.99, 0.3, 0.99, 0.03), M((i + j) % 2 ? 'g1' : 'g2', (i + j) % 2 ? P.grass : P.grass2), i - (w - 1) / 2, -0.15, j - (d - 1) / 2, g);
+  return g;
+}
+function placeVariant(ctx, x, build, io) {
+  const patch = groundPatch(ctx, x);
+  const piece = build(); patch.add(piece);
+  if (piece.userData.update) ctx.updates.push(piece.userData.update);
+  for (const s of io.in) stub(patch, s, 'in');
+  for (const s of io.out) stub(patch, s, 'out');
+}
+
+function zoomSwitch(st, names) {
+  const sw = document.createElement('div'); sw.className = 'switch';
+  sw.innerHTML = '<span>Zoom:</span>' + ['All', ...names].map((n, i) => `<button type="button" aria-pressed="${i === 0}" data-v="${i}">${n}</button>`).join('');
+  sw.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b || !st) return; st.setView(+b.dataset.v); const lb = st.stage.querySelector('.labels'); if (lb) lb.hidden = +b.dataset.v !== 0; sw.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+  return sw;
+}
+function card(c) {
+  const el = document.createElement('article'); el.className = 'card';
+  document.getElementById('cards').append(el);
+  const st = makeStage(el, (ctx) => D[c.key].forEach((v, i) => placeVariant(ctx, (i - 1) * ctx.spacing, () => v.build(c.key === 'mixer' ? { inputs: ['w', 'e'], out: 'n', jammed: false } : undefined), c.io)), c.spacing);
+  if (st) st.stage.insertAdjacentHTML('beforeend', `<div class="labels">${D[c.key].map((v, i) => `<span>${'ABC'[i]} · ${v.name}</span>`).join('')}</div>`);
+  const notes = document.createElement('div'); notes.className = 'notes';
+  notes.innerHTML = `<h2>${c.title}</h2><p>${c.text}</p>`;
+  if (st) notes.append(zoomSwitch(st, ['A', 'B', 'C']));
+  notes.insertAdjacentHTML('beforeend', `<ul class="opts">${D[c.key].map((v, i) => `<li><b>${'ABC'[i]}. ${v.name}</b>${v.note}</li>`).join('')}</ul>`);
+  el.append(notes);
+}
+CARDS.forEach(card);
+
+// Mixer connection states: no conveyors, two inputs and an output, and a jammed third input.
+(function mixerStates() {
+  const el = document.createElement('article'); el.className = 'card';
+  const cardsEl = document.getElementById('cards');
+  cardsEl.insertBefore(el, cardsEl.children[3]);
+  let variant = 0;
+  const states = [
+    { label: 'Nothing connected', ports: { inputs: [], out: null, jammed: false }, io: { in: [], out: [] } },
+    { label: 'Two in, one out', ports: { inputs: ['w', 'e'], out: 'n', jammed: false }, io: { in: ['w', 'e'], out: ['n'] } },
+    { label: 'Third input: jammed', ports: { inputs: ['w', 'e', 's'], out: 'n', jammed: true }, io: { in: ['w', 'e', 's'], out: ['n'] } },
+  ];
+  const fill = (ctx) => states.forEach((s, i) => placeVariant(ctx, (i - 1) * ctx.spacing, () => D.mixer[variant].build(s.ports), s.io));
+  const st = makeStage(el, fill, 3.2);
+  if (st) st.stage.insertAdjacentHTML('beforeend', `<div class="labels">${states.map((s) => `<span>${s.label}</span>`).join('')}</div>`);
+  const notes = document.createElement('div'); notes.className = 'notes';
+  notes.innerHTML = '<h2>Mixer States</h2><p>How a mixer changes as conveyors connect. With nothing attached it is a bare vessel. Each connected input grows a funnel with a green band, and the output side grows a spout with a gold band and arrow. A third input turns the bands red, dims the mix, and puts a warning triangle above it.</p>';
+  const sw = document.createElement('div'); sw.className = 'switch';
+  sw.innerHTML = '<span>Show with:</span>' + D.mixer.map((v, i) => `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${'ABC'[i]} · ${v.name}</button>`).join('');
+  sw.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b || !st) return; variant = +b.dataset.i; sw.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); st.rebuild(fill); });
+  notes.append(sw); if (st) notes.append(zoomSwitch(st, ['Empty', 'Two in', 'Jammed'])); el.append(notes);
+})();
+
+// one shared clock for the scrolling belt and mana textures
+(function scroll() { let last = performance.now(); const tick = (now) => { requestAnimationFrame(tick); const dt = Math.min(0.1, (now - last) / 1000); last = now; for (const t of scrolling) t.offset.y = (t.offset.y - dt * 0.9) % 1; }; requestAnimationFrame(tick); })();
+</script>
