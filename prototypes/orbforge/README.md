@@ -15,6 +15,8 @@ Elements and recipes:
 
 Visual decisions so far: Quiet Kingdom art style; primary orbs are plain Glowing Cores; secondary orbs get the Elemental Aura effect; tertiary orbs get bigger effects (still to design).
 
+Building: tap a tile tool then an empty square to place; tap a placed piece to open its settings (facing, launcher target, remove); drag a placed piece to move it (dropping on another piece swaps them). A Mixer takes at most two inputs: green notches mark its inputs, a gold notch its output, and a third input (or anything feeding its output side) jams it, shown with a ⚠ above it.
+
 Files:
 - `logic.js`: rules and levels, with no page code, so the checks run in Node.
 - `ui.js` and `page.html`: the page.

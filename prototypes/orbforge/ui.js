@@ -52,7 +52,7 @@ function sandboxLevel() {
 const isSandbox = () => S.li === 'sandbox';
 
 // ---------------------------------------------------------------- state
-const S = { view: 'levels', li: 0, layout: {}, tool: null, dir: '↑', target: 'L', last: null, msg: '', play: null, fi: 0, timer: null, result: null };
+const S = { view: 'levels', li: 0, layout: {}, tool: null, dir: '↑', target: 'L', last: null, msg: '', play: null, fi: 0, timer: null, result: null, sel: null, drag: null, dragEnd: 0 };
 const app = document.getElementById('app');
 const lvl = () => (isSandbox() ? sandboxLevel() : LEVELS[S.li]);
 const keyOf = (r, c) => r + ',' + c;
@@ -61,31 +61,28 @@ function avail(k) { return isSandbox() ? 99 : (inv()[k] || 0) - Object.values(S.
 
 function openLevel(i) {
   clearTimeout(S.timer);
-  S.view = 'level'; S.li = i; S.layout = { ...(save.layouts[i] || {}) }; S.tool = null; S.last = null; S.play = null; S.result = null;
+  S.view = 'level'; S.li = i; S.layout = { ...(save.layouts[i] || {}) }; S.tool = null; S.last = null; S.play = null; S.result = null; S.sel = null;
   S.target = 'L';
   S.msg = lvl().teach[0];
   render();
 }
 function storeLayout() { save.layouts[S.li] = S.layout; persist(); }
 
+const describeWell = (L, t) => `${ELEMENTS[L.wells[t.well].el].name} well with ${L.wells[t.well].n} orb${L.wells[t.well].n > 1 ? 's' : ''}. It releases one every 2 beats out of its arrow.`;
 function tap(r, c) {
-  if (S.play) return;
+  if (S.play || Date.now() - S.dragEnd < 350) return;
   const L = lvl(), k = keyOf(r, c), cur = S.layout[k];
   if (L.map[r][c] === '#') { S.msg = 'Rock. Nothing can be built here.'; return render(); }
   const tool = S.tool;
-  if (!tool) {
-    S.msg = cur ? (cur.t === 'well' ? `${ELEMENTS[L.wells[cur.well].el].name} well with ${L.wells[cur.well].n} orb${L.wells[cur.well].n > 1 ? 's' : ''}. It releases one every 2 beats out of its arrow.` : TILES[cur.t].info) : 'Pick something from the toolbox below, then tap here.';
+  if (tool === 'erase') { if (cur) { delete S.layout[k]; if (S.sel === k) S.sel = null; S.msg = 'Removed.'; } storeLayout(); return render(); }
+  // Tapping a placed piece opens its settings. Drag it to move it.
+  if (cur) {
+    S.sel = S.sel === k ? null : k;
+    S.msg = S.sel ? (cur.t === 'well' ? describeWell(L, cur) : TILES[cur.t].info) + ' Drag it to move it.' : 'Pick something from the toolbox, or tap a piece to change it.';
     return render();
   }
-  if (tool === 'erase') { if (cur) { delete S.layout[k]; S.msg = 'Removed.'; } storeLayout(); return render(); }
-  // same tool on the same tile: rotate or retarget
-  const sameKind = cur && (cur.t === tool || (tool.startsWith('well') && cur.t === 'well' && 'well' + cur.well === tool));
-  if (sameKind) {
-    if (cur.t === 'launcher') cur.target = Object.keys(L.enemies).length > 1 ? (cur.target === 'L' ? 'R' : 'L') : 'L';
-    else cur.dir = ROTATE[cur.dir];
-    S.msg = cur.t === 'launcher' ? `Launcher now aims at the ${cur.target === 'L' ? 'left' : 'right'} enemy.` : `Turned to ${cur.dir}.`;
-    storeLayout(); return render();
-  }
+  S.sel = null;
+  if (!tool) { S.msg = 'Pick something from the toolbox below, then tap here. Tap a placed piece to turn or change it; drag it to move it.'; return render(); }
   let tile;
   if (tool === 'belt') tile = { t: 'belt', dir: S.dir };
   else if (tool === 'launcher') tile = { t: 'launcher', target: L.enemies[S.target] ? S.target : 'L' };
@@ -94,7 +91,7 @@ function tap(r, c) {
     for (const [kk, t] of Object.entries(S.layout)) if (t.t === 'well' && t.well === wi) delete S.layout[kk];
     tile = { t: 'well', well: wi, dir: S.dir };
   } else {
-    if (avail(tool) <= 0 && !(cur && cur.t === tool)) { S.msg = `No ${TILES[tool].name}s left.`; return render(); }
+    if (avail(tool) <= 0) { S.msg = `No ${TILES[tool].name}s left.`; return render(); }
     tile = { t: tool, dir: S.dir };
   }
   // bend the previous belt/well/tile toward this one, so taps draw a line
@@ -106,9 +103,73 @@ function tap(r, c) {
     }
   }
   S.layout[k] = tile; S.last = k;
-  S.msg = tool.startsWith('well') ? 'Well placed. Tap it again with the well selected to turn it.' : `${TILES[tile.t].name} placed. Tap it again to ${tile.t === 'launcher' ? 'switch target' : 'turn it'}.`;
+  S.msg = `${tool.startsWith('well') ? 'Well' : TILES[tile.t].name} placed. Tap it to turn or change it; drag it to move it.`;
   if (SPECIALS.includes(tool) && avail(tool) <= 0) S.tool = null;
   storeLayout(); render();
+}
+
+// ---------------------------------------------------------------- drag and drop placed pieces
+function canDrop(from, to) {
+  if (!to || from === to) return false;
+  const [r, c] = to.split(',').map(Number);
+  return lvl().map[r][c] !== '#';
+}
+function dropPiece(from, to) {
+  const a = S.layout[from], b = S.layout[to];
+  S.layout[to] = a; if (b) S.layout[from] = b; else delete S.layout[from];
+  S.sel = to; S.last = null;
+  S.msg = b ? 'Swapped the two pieces.' : 'Moved.';
+  storeLayout();
+}
+const cellAt = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.closest ? e.closest('.cell') : null; };
+window.addEventListener('pointermove', (e) => {
+  const d = S.drag; if (!d || e.pointerId !== d.pid) return;
+  if (!d.active) {
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return;
+    d.active = true;
+    d.ghost = el('div', { class: 'ghost', html: d.src.innerHTML }); document.body.append(d.ghost);
+    d.src.classList.add('dragging');
+  }
+  d.ghost.style.left = e.clientX + 'px'; d.ghost.style.top = e.clientY + 'px';
+  const over = cellAt(e.clientX, e.clientY);
+  if (d.over && d.over !== over) d.over.classList.remove('drop-ok', 'drop-bad');
+  d.over = over;
+  if (over) over.classList.add(canDrop(d.from, over.dataset.k) ? 'drop-ok' : 'drop-bad');
+  e.preventDefault();
+}, { passive: false });
+const endDrag = (e) => {
+  const d = S.drag; if (!d || e.pointerId !== d.pid) return;
+  S.drag = null;
+  if (!d.active) return;
+  d.ghost.remove(); S.dragEnd = Date.now();
+  const over = cellAt(e.clientX, e.clientY), to = over && over.dataset.k;
+  if (e.type === 'pointerup' && canDrop(d.from, to)) dropPiece(d.from, to);
+  render();
+};
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+
+// Settings for the selected piece: facing, launcher target, remove.
+function configPanel() {
+  const k = S.sel, t = k && S.layout[k];
+  if (!t || S.play) return null;
+  const L = lvl(), name = t.t === 'well' ? `${ELEMENTS[L.wells[t.well].el].icon} ${ELEMENTS[L.wells[t.well].el].name} well` : `${TILES[t.t].icon} ${TILES[t.t].name}`;
+  const set = (fn) => () => { fn(); storeLayout(); render(); };
+  const rows = [el('div', { class: 'cfg-head' }, el('b', {}, name), btn('Done', () => { S.sel = null; render(); }, { small: true }))];
+  if (t.t === 'launcher') {
+    rows.push(el('div', { class: 'actions' }, el('span', { class: 'sub' }, 'Aim at:'),
+      ['L', 'R'].filter((s) => L.enemies[s]).map((s) => el('button', { class: 'btn small' + (t.target === s ? ' primary' : ''), onclick: set(() => { t.target = s; }) }, s === 'L' ? '◤ Left' : 'Right ◥'))));
+  } else if (t.dir) {
+    rows.push(el('div', { class: 'actions' }, el('span', { class: 'sub' }, t.t === 'fuser' ? 'Output:' : t.t === 'splitter' ? 'Facing:' : 'Sends orbs:'),
+      ['↑', '→', '↓', '←'].map((d) => el('button', { class: 'btn small' + (t.dir === d ? ' primary' : ''), onclick: set(() => { t.dir = d; }) }, d)),
+      btn('⟳ Rotate', set(() => { t.dir = ROTATE[t.dir]; }), { small: true })));
+  }
+  if (t.t === 'fuser') {
+    const st = mixerStatus(S.layout)[k];
+    rows.push(el('p', { class: 'sub', style: 'margin:0' }, st.jammed ? `⚠ Jammed: ${st.why}. A Mixer takes at most two inputs, and nothing may feed its output side.` : `Inputs connected: ${st.inputs.length} of 2.`));
+  }
+  rows.push(el('div', { class: 'actions' }, btn(t.t === 'well' ? 'Take back' : 'Remove', set(() => { delete S.layout[k]; S.sel = null; S.msg = 'Removed.'; }), { small: true })));
+  return el('div', { class: 'cfg' }, rows);
 }
 
 function play() {
@@ -160,7 +221,7 @@ function enemyCard(side, en, fx) {
     tags.length ? el('div', { class: 'tags' }, tags.join(' · ')) : null);
 }
 function boardView(frame) {
-  const L = lvl(), tiles = frame ? frame.tiles : S.layout;
+  const L = lvl(), tiles = frame ? frame.tiles : S.layout, mixers = mixerStatus(tiles);
   const b = el('div', { class: 'board' });
   for (let r = 0; r < 7; r++) for (let c = 0; c < 6; c++) {
     const k = keyOf(r, c), t = tiles[k];
@@ -170,21 +231,32 @@ function boardView(frame) {
       if (t.t === 'belt') { cls += ' belt'; html = `<span class="arrow">${t.dir}</span>`; }
       else if (t.t === 'launcher') { cls += ' launch'; html = '🏹' + badge(t.target === 'L' ? '◤L' : 'R◥', 'gold'); }
       else if (t.t === 'well') { cls += ' well el-' + L.wells[t.well].el; html = ELEMENTS[L.wells[t.well].el].icon + badge(t.dir, 'dir') + badge('×' + L.wells[t.well].n, 'l top'); }
-      else { cls += ' special'; html = TILES[t.t].icon + badge(t.dir, 'dir'); if (t.held) html += badge(ELEMENTS[t.held.el].icon + t.held.pow, 'l top hold'); }
+      else { cls += ' special'; html = TILES[t.t].icon + (t.t === 'fuser' ? '' : badge(t.dir, 'dir')); if (t.held) html += badge(ELEMENTS[t.held.el].icon + t.held.pow, 'l top hold'); }
+      if (t.t === 'fuser') {
+        const m = mixers[k];
+        html += m.inputs.map((sd) => `<span class="edge in ${sd}${m.jammed ? ' bad' : ''}"></span>`).join('') + `<span class="edge out ${m.output}"></span>`;
+        if (m.jammed) { cls += ' jammed'; html += '<span class="warn" title="Mixer jammed">⚠</span>'; }
+      }
+      if (!frame) cls += ' piece';
     }
+    if (!frame && S.sel === k) cls += ' sel';
     if (frame) {
       const here = frame.orbs.filter((o) => o.r === r && o.c === c);
       if (here.length) { const o = here[here.length - 1]; html = `<span class="orb el-${o.el}">${ELEMENTS[o.el].icon}</span>` + badge(o.pow, 'pow') + (t && t.t !== 'belt' ? badge(t.t === 'launcher' ? '🏹' : (TILES[t.t] || {}).icon || '', 'l top') : ''); }
       if (frame.fx.includes(k)) cls += ' flash';
     } else if (S.tool && S.tool !== 'erase' && L.map[r][c] !== '#') cls += ' target';
-    b.append(el('button', { class: cls, html, 'aria-label': `row ${r + 1} column ${c + 1}`, onclick: () => tap(r, c) }));
+    b.append(el('button', { class: cls, html, 'data-k': k, 'aria-label': `row ${r + 1} column ${c + 1}${t ? ', ' + (t.t === 'well' ? 'well' : TILES[t.t].name) : ''}`, onclick: () => tap(r, c) }));
   }
+  if (!frame) b.addEventListener('pointerdown', (e) => {
+    const cell = e.target.closest('.cell'); if (!cell || !S.layout[cell.dataset.k] || S.play) return;
+    S.drag = { from: cell.dataset.k, src: cell, x: e.clientX, y: e.clientY, pid: e.pointerId, active: false };
+  });
   return b;
 }
 function toolbox() {
   const L = lvl(), box = el('div', { class: 'tools' });
   const tool = (id, icon, name, count, disabled) => el('button', { class: 'item', 'aria-pressed': S.tool === id ? 'true' : 'false', disabled,
-    onclick: () => { S.tool = S.tool === id ? null : id; S.last = null; S.msg = id === 'erase' ? 'Tap a tile to clear it.' : id.startsWith('well') ? 'Tap a tile to put the well there. Placing it again moves it.' : TILES[id].info; render(); } },
+    onclick: () => { S.tool = S.tool === id ? null : id; S.last = null; S.sel = null; S.msg = id === 'erase' ? 'Tap a tile to clear it.' : id.startsWith('well') ? 'Tap a tile to put the well there. Placing it again moves it.' : TILES[id].info; render(); } },
   count != null ? el('span', { class: 'ct' }, count) : null, el('span', { class: 'ic' }, icon), el('span', { class: 'nm' }, name));
   box.append(el('h3', {}, L.sandbox ? 'Wells (add as many as you like)' : 'Wells (this stage only)'));
   L.wells.forEach((w, i) => { const placed = Object.values(S.layout).some((t) => t.t === 'well' && t.well === i); box.append(tool('well' + i, ELEMENTS[w.el].icon, `${ELEMENTS[w.el].name} well${placed ? ' ✓' : ''}`, '×' + w.n)); });
@@ -276,6 +348,6 @@ function render() {
   app.replaceChildren(...[head, foes, sbFoes, top, boardView(frame),
     S.play ? (S.view === 'result' ? null : el('div', { class: 'actions' }, el('span', { class: 'sub' }, `Beat ${Math.max(0, frame.beat + 1)}`), btn('Skip to the end', skip, { small: true })))
       : el('div', { class: 'actions' }, btn('▶ Play', play, { primary: true }), btn('Clear board', () => { S.layout = {}; storeLayout(); S.msg = 'Board cleared.'; render(); }, { small: true })),
-    S.play ? null : dirPicker(), S.play ? null : toolbox(), teach, recipeBook()].filter(Boolean));
+    S.play ? null : configPanel(), S.play || S.sel ? null : dirPicker(), S.play ? null : toolbox(), teach, recipeBook()].filter(Boolean));
 }
 render();

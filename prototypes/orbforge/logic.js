@@ -30,7 +30,7 @@ const RECIPES = {
 const TILES = {
   belt:     { name: 'Belt', icon: '▫️', free: true, dir: true, info: 'Carries orbs one tile per beat in its arrow’s direction. Free and unlimited.' },
   launcher: { name: 'Launcher', icon: '🏹', free: true, info: 'Fires every orb that enters it at its target. Tap it again to switch target. Free.' },
-  fuser:    { name: 'Fuser', icon: '⚗️', dir: true, info: 'Holds the first orb until a second arrives, then mixes them and sends the result out its arrow side. Same + same adds their power.' },
+  fuser:    { name: 'Mixer', icon: '⚗️', dir: true, info: 'Takes up to two inputs. Holds the first orb until a second arrives, mixes them, and sends the result out its arrow side. Same + same adds their power. A third input jams it.' },
   amp:      { name: 'Amplifier', icon: '➕', dir: true, info: '+3 power to every orb that passes.' },
   lens:     { name: 'Prism Lens', icon: '🔍', dir: true, info: '×2 power. Multiply last for the biggest numbers.' },
   splitter: { name: 'Splitter', icon: '🔀', dir: true, info: 'Sends orbs out to its left, then its right, alternating. Its arrow is the way it faces.' },
@@ -56,8 +56,8 @@ const LEVELS = [
   { name: 'The Ogre at the Gate', par: 1, map: ['......', '......', '......', '#....#', '......', '......', '......'],
     wells: [{ el: 'fire', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1 }, enemies: { L: { type: 'ogre', hp: 10 } },
     teach: ['Fire and earth alone won’t bring down 10 HP. Mixed, they make 🌋 Magma: 6 damage and a fierce burn.',
-      'Point both wells into a Fuser. Whatever arrives second is mixed with the first, and Magma leaves through the Fuser’s arrow.',
-      'Special tiles like the Fuser are used up once an orb touches them. Ones you don’t use carry over to the next level.'] },
+      'Point both wells into a Mixer. Whatever arrives second is mixed with the first, and Magma leaves through the Mixer’s arrow.',
+      'Special tiles like the Mixer are used up once an orb touches them. Ones you don’t use carry over to the next level.'] },
   { name: 'Troll Bridge', par: 3, map: ['......', '......', '#....#', '......', '......', '......', '......'],
     wells: [{ el: 'fire', n: 1 }, { el: 'earth', n: 1 }], grant: { fuser: 1, amp: 1, lens: 1 }, enemies: { L: { type: 'troll', hp: 22 } },
     teach: ['The Amplifier adds 3, the Prism Lens doubles.', 'Order matters: add first, then multiply.',
@@ -85,6 +85,32 @@ function combine(a, b, unlockAll = false) {
   if (!out) return { fizzle: `${ELEMENTS[a.el].name} and ${ELEMENTS[b.el].name} don’t mix. Fizzle!` };
   if (ELEMENTS[out].locked && !unlockAll) return { fizzle: `${ELEMENTS[a.el].name} + ${ELEMENTS[b.el].name} reacts, but you haven’t learned that recipe yet. Fizzle!` };
   return { el: out, pow: ELEMENTS[out].base + (a.pow - ELEMENTS[a.el].base) + (b.pow - ELEMENTS[b.el].base), note: `${ELEMENTS[out].name}!` };
+}
+
+const OF_SIDE = { '↑': 'n', '→': 'e', '↓': 's', '←': 'w' };
+const OF_REV = { '↑': '↓', '↓': '↑', '←': '→', '→': '←' };
+// Directions a tile sends orbs out of.
+function outputsOf(t) {
+  if (!t) return [];
+  if (t.t === 'splitter') return [OF_LEFT[t.dir], OF_RIGHT[t.dir]];
+  if (t.t === 'launcher') return [];
+  return t.dir ? [t.dir] : [];
+}
+// For every mixer: the sides orbs come in from, its output side, and whether it is jammed.
+function mixerStatus(layout) {
+  const out = {};
+  for (const [k, t] of Object.entries(layout)) {
+    if (t.t !== 'fuser') continue;
+    const [r, c] = k.split(',').map(Number), inputs = [];
+    for (const d of ['↑', '→', '↓', '←']) {
+      const [dr, dc] = OF_DIRS[d], nb = layout[(r + dr) + ',' + (c + dc)];
+      if (outputsOf(nb).includes(OF_REV[d])) inputs.push(OF_SIDE[d]);
+    }
+    const intoOutput = inputs.includes(OF_SIDE[t.dir]);
+    out[k] = { inputs, output: OF_SIDE[t.dir], jammed: inputs.length > 2 || intoOutput,
+      why: inputs.length > 2 ? 'three inputs' : intoOutput ? 'something feeds into its output side' : '' };
+  }
+  return out;
 }
 
 function makeEnemies(level) {
@@ -124,7 +150,7 @@ function simulate(level, layout, opts = {}) {
   const frames = [], enemies = makeEnemies(level);
   const tiles = ofClone(layout);
   const wells = Object.entries(tiles).filter(([, t]) => t.t === 'well').map(([k, t]) => ({ k, r: +k.split(',')[0], c: +k.split(',')[1], dir: t.dir, el: level.wells[t.well].el, left: level.wells[t.well].n }));
-  const used = new Set(), made = new Set();
+  const used = new Set(), made = new Set(), mixers = mixerStatus(layout);
   let orbs = [], pending = [], log = [], nextId = 1;
   const snap = (beat) => { frames.push({ beat, orbs: orbs.map((o) => ({ el: o.el, pow: o.pow, r: o.r, c: o.c })), enemies: ofClone(enemies), tiles: ofClone(tiles), log: log.join(' '), fx: [...fxNow] }); log = []; fxNow = []; };
   let fxNow = [];
@@ -155,6 +181,8 @@ function simulate(level, layout, opts = {}) {
       else if (t.t === 'splitter') { t.flip = !t.flip; o.dir = t.flip ? OF_LEFT[t.dir] : OF_RIGHT[t.dir]; }
       else if (t.t === 'fuser') {
         o.gone = true;
+        if (mixers[key].jammed) { log.push(`${ELEMENTS[o.el].icon} hits a jammed Mixer (${mixers[key].why}) and spills.`); return; }
+        if (o.dir === OF_REV[t.dir]) { log.push(`${ELEMENTS[o.el].icon} tries to enter the Mixer through its output and spills.`); return; }
         if (!t.held) { t.held = { el: o.el, pow: o.pow }; return; }
         const res = combine(t.held, o, opts.unlockAll); t.held = null;
         if (res.fizzle) { log.push(res.fizzle); return; }
@@ -180,10 +208,10 @@ function simulate(level, layout, opts = {}) {
     if (!busy) break;
   }
   const held = Object.values(tiles).filter((t) => t.held);
-  if (held.length) { log.push(`${held.length} orb${held.length > 1 ? 's' : ''} left waiting in a Fuser fizzle${held.length > 1 ? '' : 's'} out.`); snap(frames.length); }
+  if (held.length) { log.push(`${held.length} orb${held.length > 1 ? 's' : ''} left waiting in a Mixer fizzle${held.length > 1 ? '' : 's'} out.`); snap(frames.length); }
   const alive = Object.values(enemies).filter((e) => e.hp > 0);
   const usedTiles = {}; for (const k of used) { const t = tiles[k]; usedTiles[t.t] = (usedTiles[t.t] || 0) + 1; }
   return { frames, win: !alive.length, usedTiles, made: [...made], reason: alive.length ? alive.map((e) => `The ${ENEMIES[e.type].name} survives with ${e.hp} HP.`).join(' ') : 'Every enemy is down.' };
 }
 
-if (typeof module !== 'undefined') module.exports = { ELEMENTS, RECIPES, TILES, ENEMIES, LEVELS, simulate, combine };
+if (typeof module !== 'undefined') module.exports = { ELEMENTS, RECIPES, TILES, ENEMIES, LEVELS, simulate, combine, mixerStatus };
