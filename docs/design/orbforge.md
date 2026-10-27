@@ -14,7 +14,7 @@ Your Keep stands at the centre of a fogged, handmade map. Each direction leads t
 
 1. **Build phase.** The game is paused. Place extractors, belts, towers and beacons.
 2. **Play.** Everything runs in real time. You can **pause** at any time to rebuild, and you can **speed up** (×2).
-3. **Nightfall clock.** Waves on the Keep grow stronger over time, so standing still eventually loses. You have to expand.
+3. **Nightfall clock.** Foes grow tougher and come faster over time, and every 2½ minutes the dark stirs a sleeping lair even if your light hasn't reached it. Standing still eventually loses, so you have to expand.
 4. **The run ends** when the Keep falls. You then earn Echoes (see Meta progression).
 
 ## The map
@@ -23,10 +23,10 @@ One handmade map, the same every run. Enemy waves vary slightly between runs.
 
 | Direction | Region | Veins | Enemies | Counter |
 |---|---|---|---|---|
-| North | Stonereach | Earth | Armoured | Fire, cracking effects |
-| East | Ember Wastes | Fire | Fire-shielded | Water |
-| South | Tidemarsh | Water | Fast swarms | Splash and slow (earth/mud) |
-| West | Skyspire | Air | Fliers | Opened late (see Hidden things) |
+| North | Stonereach | Earth | Armoured | Earth or mud crack armour; steam scalds through it |
+| East | Ember Wastes | Fire | Fire-shielded | Water soaks the shield away; fire does nothing until then |
+| South | Tidemarsh | Water | Fast swarms | Splash (Mortar, Spray, Rune Trap) and mud to slow them |
+| West | Skyspire | Air | Fliers (ignore walls and traps) | Ice freezes them; opened late (see Hidden things) |
 
 - **Regions lean on each other:** each region's veins counter another region's enemies, so the order you explore in matters. Going east first is hard unless you've already brought water up from the south.
 - **Rings:** each region has three rings outward from the Keep. Outer rings have richer veins, stronger lairs and more hidden things.
@@ -122,6 +122,8 @@ The tower type decides how a projectile is delivered; the orb's element decides 
   - Spray Fountain: a cone
   - Rune Trap: triggers when walked over
 - Each tower has a small magazine (about 6 orbs), shown as a stack of orbs on the tower.
+- The Bolt Thrower, Spray Fountain and Rune Trap are known from the start. The Mortar, Beam Spire and Lance are unlocked by blueprints found on the map.
+- The Keep has its own weak bolt that needs no orbs, so a single leak isn't instantly fatal.
 - **Towers fire in arrival order.** Effects set each other up, so sequences matter. For example:
   - water then lightning gives "soaked ×2"
   - ice then earth gives "brittle ×2"
