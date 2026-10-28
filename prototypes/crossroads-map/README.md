@@ -1,5 +1,7 @@
 # Crossroads demo
 
+> Superseded: this demo follows the archived defence design (`docs/design/archive/orbforge-defence.md`). The current direction is the puzzle demo in `prototypes/springs-puzzle`.
+
 A 2D placeholder demo of the Orbforge map and real-time defence from `docs/design/orbforge.md`. Everything fits on one phone screen: status bars on top, the map in the middle, the build bar at the bottom. Panels open as sheets over the map.
 
 ## What it does

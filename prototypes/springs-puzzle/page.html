@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Springs Puzzle</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* One screen, no page scroll: run controls on top, the level fills the middle, the piece bar at the bottom.
+     Inspect, goals and help open as sheets over the map. Placeholder art only. */
+  :root {
+    --bg: #15131c; --panel: #201d2a; --line: #3a3549; --fg: #ece6d6; --muted: #a59fb3;
+    --gold: #e0b55c; --good: #6fcf8a; --bad: #e0627a;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif; --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--fg); margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { font: 14px/1.4 var(--body); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #app { height: 100vh; height: 100dvh; max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 4px;
+    padding: max(6px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+  h2 { font: 700 16px/1.2 var(--display); margin: 0; letter-spacing: 0.03em; }
+  h3 { font: 600 12px/1.2 var(--body); margin: 10px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  p { margin: 4px 0; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .bar1 { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 6px; align-items: center; font-variant-numeric: tabular-nums; }
+  .gold { color: var(--gold); font-weight: 700; white-space: nowrap; }
+  .hp { position: relative; height: 18px; border-radius: 9px; background: #3a2230; overflow: hidden; min-width: 60px; }
+  .hp > i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #c94a5e, #e0806a); }
+  .hp > span { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 18px; font-weight: 600; }
+  .chip { display: inline-flex; gap: 3px; align-items: center; padding: 1px 7px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 20px; }
+  .raw { width: 9px; height: 11px; clip-path: polygon(50% 0, 100% 40%, 75% 100%, 25% 100%, 0 40%); display: inline-block; }
+  .forged { width: 11px; height: 11px; border-radius: 50%; display: inline-block; box-shadow: 0 0 5px currentColor; border: 1.5px solid rgba(0,0,0,.6); }
+  .mapbox { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; background: #0c0a10; border: 1px solid var(--line); }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .toast { position: absolute; left: 8px; right: 8px; top: 6px; text-align: center; pointer-events: none; }
+  .toast span, .hint span { display: inline-block; background: rgba(20,17,28,.9); border: 1px solid var(--line); padding: 3px 10px; border-radius: 8px; font-size: 12px; }
+  .hint { position: absolute; left: 8px; right: 8px; top: 6px; text-align: center; pointer-events: none; }
+  .sheet { position: absolute; left: 6px; right: 6px; bottom: 6px; max-height: 62%; overflow: auto; background: rgba(28,25,38,.97); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.5); user-select: text; -webkit-user-select: text; }
+  .sheet.full { top: 6px; max-height: none; }
+  .sheet .title { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .btn { font: 600 13px var(--body); color: var(--fg); background: #2b2738; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; min-height: 34px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: #4b3a17; border-color: var(--gold); color: #ffe7b0; }
+  .btn.small { padding: 3px 8px; min-height: 30px; font-size: 12px; }
+  .btn.on { border-color: var(--gold); color: var(--gold); }
+  .tools { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+  .tool { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; height: 46px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: #241f30; color: var(--fg); cursor: pointer; font: 600 10px var(--body); }
+  .tool .ic { font-size: 19px; line-height: 22px; }
+  .tool .cost { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tool.on { border-color: var(--gold); background: #3a2f18; }
+  .tool.locked { opacity: .45; }
+  .tool .lock { position: absolute; top: 1px; right: 3px; font-size: 10px; }
+  .list { display: flex; flex-direction: column; gap: 5px; }
+  .item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: #29253a; }
+  .item .info { font-size: 12px; color: var(--muted); }
+  select { font: 13px var(--body); background: #2b2738; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; min-height: 32px; }
+  .good { color: var(--good); } .bad { color: var(--bad); } .goldc { color: var(--gold); } .muted { color: var(--muted); }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.perm { color: var(--gold); border-color: #6b5527; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 12px; font-size: 12px; }
+  @media (min-height: 760px) { .tool { height: 52px; } .tool .ic { font-size: 22px; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/*LOGIC*/
+/*UI*/
+</script>
+</body>
+</html>

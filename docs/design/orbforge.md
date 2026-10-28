@@ -1,186 +1,127 @@
-# Orbforge — game design
+# Orbforge — game design (puzzle direction)
 
-Status: working draft. The numbers are placeholders to tune in prototypes.
+Status: working draft. Numbers are placeholders to tune in prototypes. The earlier tower-defence version is archived in `archive/orbforge-defence.md`.
 
 ## Pitch
 
-Your Keep stands at the centre of a fogged, handmade map. Each direction leads to a different element's land. Every run you choose which way to push, mine that land's veins, and turn what you mine into firepower. You keep the waves off with towers fed by belts of glowing orbs. When the Keep falls, the run ends. You keep a few permanent gains, restart on the same map, and try another route.
+A calm logistics puzzle on one continuous handmade map. Wellsprings by the start pour out glowing orbs. You lay conveyors through the level to feed braziers, basins and locks. Each one asks for a certain element at a certain rate. Feed it and a door opens, a bridge forms, or a gate rises, revealing the next small puzzle.
 
-- Genre: real-time base defence with exploration, played as a roguelite. Runs are 12–20 minutes long, retries are unlimited, and each run leaves permanent gains.
-- Setting: medieval fantasy, elemental magic.
+There are no monsters and no failure. The fun is in the tiles: splitting, joining, merging and demerging orb streams to hit exact rates through tight spaces.
+
+- Genre: rate-based conveyor puzzle (in the spirit of Factorio's logistics, kept small and readable).
+- Setting: medieval fantasy, elemental magic. Quiet Kingdom art style (see Art direction).
 - Platform: phones first (Godot 4, Mobile renderer). A web build for test links comes later (see `docs/decisions/0001-game-engine.md`).
 
-## Run structure
+## Core rules
 
-1. **Build phase.** The game is paused. Place extractors, belts, towers and beacons.
-2. **Play.** Everything runs in real time. You can **pause** at any time to rebuild, and you can **speed up** (×2).
-3. **Nightfall clock.** Foes grow tougher and come faster over time, and every 2½ minutes the dark stirs a sleeping lair even if your light hasn't reached it. Standing still eventually loses, so you have to expand.
-4. **The run ends** when the Keep falls. You then earn Echoes (see Meta progression).
+1. **Wellsprings** sit on spring spots in the **Spring Grounds**, the start area. Each emits **1 orb a second** of its element. Veins never run dry.
+2. **Wellsprings can be placed only on spring spots near the start.** All flow begins there and has to be piped out through the level, so the network grows from the start.
+3. **Wellsprings are earned.** You start with one, and goals give more. The demo has 3 spring spots and up to 3 wellsprings.
+4. **Runs:**
+   - A run is one session of flow.
+   - **Between runs** you place or move wellsprings and choose each one's element from the elements you've unlocked.
+   - **During a run** wellsprings are fixed, but every other piece can be built, moved or picked up freely.
+   - **Ending a run** clears all orbs and drops held gates. Your layout and everything opened for good stay.
+5. **Belts are unlimited. Every other piece is limited** and counted in the inventory. Goals give more pieces.
+   - Picking a piece up returns it to the inventory.
+   - A door that's open for good no longer needs its pieces, so solving a puzzle often frees pieces for the next one.
+6. **Lane capacity:** a belt moves an orb one tile per beat (0.25 s), so one lane carries at most 4 orbs a second.
+7. **Rates are measured** over the last 8 seconds. Permanent goals must also stay satisfied for 4 seconds in a row, so a burst of backed-up orbs can't open them.
 
-## The map
+## Elements and recipes
 
-One handmade map, the same every run. Enemy waves vary slightly between runs.
+| Tier | Orbs | Made by |
+|---|---|---|
+| Primary | Fire, Water, Earth, Air | Wellsprings |
+| Secondary | Steam (fire + water), Magma (earth + fire), Mud (earth + water), Lightning (air + fire), Ice (air + water), Dust (air + earth) | Mixer |
+| Tertiary (later) | Eruption, Obsidian, Quagmire, Storm | Mixer, after finding recipes |
 
-| Direction | Region | Veins | Enemies | Counter |
+- **Merged orbs look different:** each wears a ring in its two parts' colours.
+- **You start with only Fire.** More elements are unlocked by goals: Water, then Earth (and Air later in the full game). Elements are only the *choices* for wellsprings. You can still only run as many streams as you own wellsprings.
+
+## Pieces
+
+| Piece | Limited? | What it does |
+|---|---|---|
+| Belt | Unlimited | Moves orbs forward. Takes from behind or the sides. |
+| Splitter | Yes | Takes from behind and sends out left and right in turn: each side gets half. If one side is blocked, the other gets everything. |
+| Joiner | Yes | Takes from behind and both sides, alternating whenever more than one is waiting. Makes sequences (fire, water, fire, water). |
+| Mixer | Yes | One orb from each of two inputs → one merged orb out of its gold notch (1 fire/s + 1 water/s → 1 steam/s). A third input, or anything feeding its notch, **jams** it (⚠). An unknown pair fizzles. |
+| Demerger | Yes | Takes a merged orb from behind and splits it: first part out the left, second out the right (steam → fire left, water right). |
+| Wellspring | Yes | On spring spots only, between runs only. 1 orb/s of the chosen element. |
+| Underpass (planned) | Yes | A belt tunnel that jumps 2–3 tiles, for crossing another line or a wall. |
+
+Rate maths the puzzles are built on:
+- a Splitter halves a stream
+- a Joiner adds streams together
+- a Mixer turns 2 in into 1 out
+- a Demerger turns 1 in into 2 out
+
+## Goals (what you pipe into)
+
+| Kind | Looks like | Rule | Once done |
+|---|---|---|---|
+| **Door** | A stone door with a brazier or basin | Hold the rate for 4 s | Open forever |
+| **Held gate** | A portcullis on a water wheel | Open only while the rate keeps coming | Drops when the flow stops or the run ends |
+| **Bridge** | Bridge-works by a chasm | Deliver a total (e.g. 30 earth) | Built forever |
+| **Rune lock** | A ring of glyphs | An alternating sequence at a rate, held for 4 s | Open forever |
+| **Scales** | Two pans | Two elements at the rate **and** equal to each other, held 4 s | Open forever |
+| **Shrine** (optional) | A glowing altar | A rate | Reward only |
+
+- **Every goal gives a reward:** pieces, a wellspring or an element.
+- **Held gates are a standing tax.** Everything beyond one needs it kept fed, which uses up part of your flow. Late puzzles must keep earlier gates fed while solving the new one, so the network grows without any single region being big.
+- **Pieces stuck behind a closed gate** can still be picked up from anywhere, so nothing is ever stranded.
+
+## Puzzle ingredients (each region is small, about 5×5 to 7×7)
+
+- **Narrow pass:** a one-tile gap fits one lane. Merge two elements, pass them through, then demerge on the far side.
+- **Not enough flow:** a goal needs more than one wellspring gives, so join streams. A held gate already taking part of a stream leaves less for the rest.
+- **One element at a time:** a held gate needs water while the door beyond needs fire. That forces a second wellspring and a new run with both elements.
+- **Sequences:** a rune lock needs fire and water alternating, which only a balanced Joiner gives.
+- **Balance:** scales need two products at equal rates, so streams must be split evenly.
+- **Space:** tight rooms, crossing lines, and receptors and doors placed so belts have to wind around them.
+- **Terrain:**
+  - rock: can't build
+  - chasm: needs a bridge
+  - later: lava (burns any orb that isn't fire), ice (belts run double speed)
+
+## The demo level (`prototypes/springs-puzzle`)
+
+One continuous map, 25×27 tiles, with nine goals. It starts with one fire wellspring and no other pieces.
+
+| # | Region | Goal | Needs | Reward |
 |---|---|---|---|---|
-| North | Stonereach | Earth | Armoured | Earth or mud crack armour; steam scalds through it |
-| East | Ember Wastes | Fire | Fire-shielded | Water soaks the shield away; fire does nothing until then |
-| South | Tidemarsh | Water | Fast swarms | Splash (Mortar, Spray, Rune Trap) and mud to slow them |
-| West | Skyspire | Air | Fliers (ignore walls and traps) | Ice freezes them; opened late (see Hidden things) |
+| A | The First Door | Door: fire 1/s | Belts | Splitter |
+| B | Twin Braziers | Door: two braziers, fire 0.5/s each | Splitter | Water, a second wellspring |
+| H | Shrine of Embers (optional) | Shrine: fire 1.5/s | Two fire wellsprings | Splitter |
+| C | The Sluice | **Held gate**: water 0.5/s | A fire + water run | Mixer |
+| D | The Steam Door | Door: steam 0.5/s, beyond the sluice | Splitting water between sluice and Mixer | Demerger |
+| E | The Narrow | Door: fire 0.5 + water 0.5 past a one-tile gap | Mixer → gap → Demerger | Joiner |
+| F | The Rune Lock | Rune: fire, water alternating at 1/s | Demerger → Joiner | Earth, a third wellspring, a second Mixer |
+| G | The Chasm | Bridge: 30 earth | A run with earth | Splitter |
+| I | The Scales | Scales: magma 0.5 and mud 0.5, equal | Earth split between two Mixers | End of the demo |
 
-- **Regions lean on each other:** each region's veins counter another region's enemies, so the order you explore in matters. Going east first is hard unless you've already brought water up from the south.
-- **Rings:** each region has three rings outward from the Keep. Outer rings have richer veins, stronger lairs and more hidden things.
-- **Roads:** enemies come from **lairs** along fixed roads. A road appears as the fog over it lifts.
-- **Building on roads:** you can build on roads.
-  - Flat tiles (belts, splitters) can be walked over.
-  - Solid tiles (towers, walls, Sources) block the road and get attacked.
+Every region's intended solution is built and checked by `prototypes/springs-puzzle/check.js`, using only the pieces you have at that point. It also checks that tempting shortcuts fail:
+- B with one stream fails.
+- D without splitting water for the sluice fails.
+- F with the rate but not the pattern fails.
 
-### Exploring during a run
+## Progression in the full game
 
-- **Fog** covers everything outside your lit area. You can only build inside the light.
-- **Beacons** are bought with gold and light a radius around them. A beacon must be placed inside existing light, so the light grows outward a step at a time. Pushing outward is the main decision you make all run.
-- **The trade-off:** pushing further reaches richer veins and secrets, but it also wakes more lairs and stretches your belts, which are harder to defend.
-- **Lairs** wake when the light reaches them and then send enemies down their road.
-  - Destroying a lair stops its stream and pays out gold.
-  - A destroyed lair stays destroyed for the rest of the run, and comes back next run.
-
-## Economy
-
-### Two currencies
-
-| Currency | Comes from | Buys |
-|---|---|---|
-| **Gold** | Killing mobs, destroying lairs | Structures: towers, belts, splitters, Mixer, Joiner, extractors, beacons, walls |
-| **Raw orbs** | Veins, through extractors and belts, banked at the Keep | Sources and Keep alchemy |
-
-Mobs drop gold only, never orbs.
-
-### Two kinds of orb (they must look different)
-
-- **Raw orbs** are rough, faceted crystal shards. They are matte, dimly glowing and tumble along belts. They are currency, and the Keep accepts only these.
-- **Forged orbs** are ammo, made by Sources. They use the chosen orb art:
-  - primaries are Glowing Cores with a dark, outline-only symbol
-  - secondaries add the Elemental Aura animation
-  - tertiaries get bigger effects (still to design)
-
-  Towers accept only forged orbs.
-- A belt that carries the wrong kind into the Keep or a tower jams and shows ⚠.
-
-### Veins
-
-- A vein holds a fixed number of raw orbs, for example 120 fire. It is used up when empty.
-- An extractor placed on a vein outputs raw orbs at a fixed rate onto a belt toward the Keep.
-- Starting veins are near the Keep and safe, but small. Rich veins sit near or on roads.
-- Each map has a capped total of orbs, which keeps balance under control.
-
-### Keep alchemy (merging raw orbs)
-
-- Done by hand in the Keep panel: **50 + 50 → 50** of the secondary (for example, fire + water → steam).
-- A merge can't be undone.
-- Before you confirm, the panel shows what you'll have afterwards, for example: "After this: 50 steam → enough for 1 Steam Source; fire left: 20."
-- Tertiary recipes are unlocked by recipe tablets (see Hidden things).
-
-### Sources
-
-- Bought with raw orbs from the Keep wallet. They produce **forged orbs forever** at a fixed rate.
-- Picking a Source up puts it back in your inventory for free. Selling one refunds 50% of its orb price.
-- A Source moved during a wave goes dormant for 3 s.
-- Prices (placeholders):
-
-  | Source | Price | Raw input | Output |
-  |---|---|---|---|
-  | Primary (fire) | 40 fire | 40 | 1 orb/s |
-  | Secondary (steam) | 30 steam | 60 | 1 orb/s, stronger effect |
-  | Tertiary (eruption) | 20 eruption | about 120 | 0.7 orb/s, big effect |
-
-### Moving forged orbs
-
-- **Belts** move orbs.
-- **Splitters** split a flow, they don't copy it: a 1/s flow becomes 0.5/s per branch.
-- The **Joiner** merges two belts, taking from each in turn, which makes fire, water, fire, water sequences.
-- The **Mixer** (field merge) takes two forged streams in and sends one secondary stream out. The comparison with Keep alchemy:
-
-  | | Keep alchemy | Mixer tile |
-  |---|---|---|
-  | Merges | raw orbs, in your wallet | forged ammo, on the belts |
-  | Cost | 50 + 50 → 50, permanent | free to run, but two streams become one (2 in → 1 out) |
-  | Use | buying secondary and tertiary Sources | flexible on-the-spot combos |
-  | Undo | never | any time (rebuild it) |
-
-  A Mixer takes at most two inputs. A third input, or anything feeding its output side, jams it and shows ⚠.
-- **Amplifier and Lens** tiles boost the orbs that pass through them, as in the earlier Orbforge prototype.
-
-## Towers
-
-The tower type decides how a projectile is delivered; the orb's element decides its effect.
-
-- Tower types:
-  - Bolt Thrower: single target
-  - Beam Spire: a line
-  - Mortar: splash
-  - Lance: pierces
-  - Spray Fountain: a cone
-  - Rune Trap: triggers when walked over
-- Each tower has a small magazine (about 6 orbs), shown as a stack of orbs on the tower.
-- The Bolt Thrower, Spray Fountain and Rune Trap are known from the start. The Mortar, Beam Spire and Lance are unlocked by blueprints found on the map.
-- The Keep has its own weak bolt that needs no orbs, so a single leak isn't instantly fatal.
-- **Towers fire in arrival order.** Effects set each other up, so sequences matter. For example:
-  - water then lightning gives "soaked ×2"
-  - ice then earth gives "brittle ×2"
-
-## Elements
-
-| Tier | Orbs |
-|---|---|
-| Primary | Fire, Water, Earth; Air (late) |
-| Secondary | Steam, Magma, Mud; Lightning, Ice, Dust (need Air) |
-| Tertiary | Eruption, Obsidian, Quagmire, Storm (need recipe tablets) |
-
-Effects: burn (damage over time), soak, crack armour, slow/mire, freeze/brittle, knockback, fire shield (enemy).
-
-## Hidden things
-
-| Secret | How to find it | Reward |
-|---|---|---|
-| Blueprint ruins | Light their area and reach them | **Permanent** unlock: a new tower or tile type |
-| Recipe tablets | Deep ring of a region | **Permanent** tertiary recipe |
-| Sealed gates | Feed them N raw orbs of an element (e.g. 30 ice melts the frost gate) | A shortcut, a rich vein, or the way to Skyspire |
-| Buried veins | Dowsing Rod relic, or odd tile markings | Bonus orbs |
-| Ancient Sources | Ruins in the outer rings | A free Source you can claim for this run |
-| Relic caches | Behind lairs or puzzles | **Permanent** relic, e.g. "Extractors +20%", "start with a Steam Source" |
-| Lore stones | Scattered | Hints pointing at other secrets |
-| Waystones | One per region, mid ring | Once activated, later runs can start with that region's first ring already lit |
-
-Air is the late-game discovery. Opening Skyspire takes items from at least two other regions, so it gets solved over several runs.
-
-## Meta progression (between runs)
-
-| Resets every run | Kept forever |
-|---|---|
-| Gold, raw orbs, Sources, all buildings | Blueprints, recipes, relics |
-| Light (fog returns) | Map memory: revealed areas stay sketched on the map (veins, lairs, roads, found secrets), but the fog returns |
-| Lairs | Found secrets stay found |
-| | Activated waystones |
-| | Echoes and the Keep upgrades bought with them |
-
-- **Echoes** are earned for distance explored, lairs destroyed, secrets found, and time survived.
-- **The Echo shop:** Keep upgrades such as starting gold, a starting Source, cheaper beacons, a bigger magazine and more Keep health.
-
-## Progression arc
-
-1. **Runs 1–3:** the south (Tidemarsh) is the tutorial region. You learn veins, the Keep, Sources, towers and splitters, and usually die around ring 2.
-2. **Runs 4–8:** you pick north or east. Echo upgrades make ring 1 quick. Keep alchemy and the Mixer come in here.
-3. **Mid-game:** recipe tablets bring tertiaries in. Sealed gates need elements from other regions, so you plan routes across several runs.
-4. **Late game:** opening Skyspire unlocks Air, and the map's final lair is out west.
-
-New systems are introduced one at a time:
-
-1. A given Source and towers only.
-2. Veins and the Keep.
-3. Buying Sources.
-4. Splitters.
-5. Keep alchemy.
-6. Mixer and Joiner.
+- **Map:** one continuous map of many small regions, with branches and optional side shrines.
+- **Rewards:**
+  - more wellsprings (more parallel streams)
+  - new elements (more combinations)
+  - new piece types (Demerger, Underpass)
+  - recipe tablets for tertiaries
+- **Order:**
+  1. Early regions teach one piece each.
+  2. Middle regions combine two pieces under a held-gate tax.
+  3. Late regions use three or four elements with tight space.
+- **Hidden things:**
+  - side shrines with harder optional goals, giving extra pieces
+  - lore stones with hints
+  - secret spring spots that hold an extra wellspring
 
 ## Art direction (decided)
 
@@ -188,14 +129,13 @@ New systems are introduced one at a time:
   - soft ambient occlusion
   - rounded, filleted shapes
   - fixed camera with no rotation
-  - thin seams between tiles, antialiasing
+  - thin seams, antialiasing
   - real moving conveyors
-- **Forged orbs:** Glowing Core primaries with dark, outline-only symbols, and the Elemental Aura animation on secondaries.
-- **Raw orbs:** faceted crystal shards (to design).
+- **Orbs:** primaries are Glowing Cores with dark, outline-only symbols. Secondaries add the Elemental Aura animation. Tertiaries get bigger effects (still to design).
 - **Tile designs:** picks are pending from `prototypes/art-styles/tile-designs.html`.
 
 ## Open questions
 
-- Run length target and how fast the Nightfall clock ramps.
-- How many Echoes a typical run gives, and the Echo shop prices.
-- Map size: how many tiles per ring, and whether the whole map fits on screen or needs a scrolling camera.
+- Should the Underpass be in the core set, or stay a rare reward?
+- Should the rate window (8 s) and the hold (4 s) be shown as a visible "filling" meter on each goal?
+- Should held gates show their tax on the overview map so the network's load is readable?
