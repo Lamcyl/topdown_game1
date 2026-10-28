@@ -49,7 +49,7 @@
   .btn.primary { background: #4b3a17; border-color: var(--gold); color: #ffe7b0; }
   .btn.small { padding: 3px 8px; min-height: 30px; font-size: 12px; }
   .btn.on { border-color: var(--gold); color: var(--gold); }
-  .tools { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+  .tools { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; }
   .tool { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; height: 46px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: #241f30; color: var(--fg); cursor: pointer; font: 600 10px var(--body); }
   .tool .ic { font-size: 19px; line-height: 22px; }
   .tool .cost { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -64,7 +64,8 @@
   .tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
   .tag.perm { color: var(--gold); border-color: #6b5527; }
   .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 12px; font-size: 12px; }
-  @media (min-height: 760px) { .tool { height: 52px; } .tool .ic { font-size: 22px; } }
+  @media (max-width: 400px) { .tools { grid-template-columns: repeat(5, 1fr); } .tool { height: 40px; } .tool .ic { font-size: 17px; line-height: 19px; } }
+  @media (min-height: 760px) and (min-width: 401px) { .tool { height: 52px; } .tool .ic { font-size: 22px; } }
 </style>
 </head>
 <body>
@@ -95,9 +96,11 @@ const PIECES = {
   joiner: { name: 'Joiner', icon: '⑃', info: 'Takes from behind and both sides, alternating between them, and sends forward. Makes sequences.' },
   mixer: { name: 'Mixer', icon: '⚗️', info: 'Takes one orb from each of two inputs and sends one merged orb out of the gold notch (fire + water → steam). A third input jams it.' },
   demerger: { name: 'Demerger', icon: '⚖', info: 'Takes a merged orb from behind and splits it: first part out the left, second out the right (steam → fire left, water right).' },
+  underpass: { name: 'Underpass', icon: '🕳️', pair: true, info: 'A tunnel: tap the entrance, then the exit 2–4 tiles straight ahead. Orbs go under whatever is between (belts, pieces, goals) but never under rock, chasms, doors or gates.' },
   wellspring: { name: 'Wellspring', icon: '⛲', info: 'Goes on a spring spot by the start. Emits 1 orb a second of the element you chose for this run.' },
 };
-const PIECE_ORDER = ['belt', 'splitter', 'joiner', 'mixer', 'demerger', 'wellspring'];
+const PIECE_ORDER = ['belt', 'splitter', 'joiner', 'mixer', 'demerger', 'underpass', 'wellspring'];
+const UNDERPASS_MIN = 2, UNDERPASS_MAX = 4; // exit distance from the entrance, in tiles
 
 // ---------------------------------------------------------------- the level
 // Tiles: '#' rock, '.' floor, 'S' spring spot, '~' chasm, 'B' barrier (owned by an objective).
@@ -131,7 +134,7 @@ const OBJECTIVES = [
   { id: 'C', name: 'The Sluice', kind: 'held', receptors: [{ x: 15, y: 8, el: 'water', rate: 0.5 }], barrier: [[8, 9], [8, 10], [8, 11]],
     reward: { mixer: 1 }, hint: 'The sluice stays up only while water keeps flowing in. Everything west passes under it.' },
   { id: 'D', name: 'The Steam Door', kind: 'door', receptors: [{ x: 2, y: 12, el: 'steam', rate: 0.5 }], barrier: [[2, 7], [3, 7]],
-    reward: { demerger: 1 }, hint: 'Steam is fire and water mixed. Keep the sluice fed too.' },
+    reward: { demerger: 1, underpass: 1 }, hint: 'Steam is fire and water mixed. Keep the sluice fed too.' },
   { id: 'E', name: 'The Narrow', kind: 'door', receptors: [{ x: 7, y: 1, el: 'fire', rate: 0.5 }, { x: 7, y: 6, el: 'water', rate: 0.5 }], barrier: [[8, 2], [8, 3], [8, 4]],
     reward: { joiner: 1 }, hint: 'Only one lane fits through the gap. What goes in merged can come out apart.' },
   { id: 'F', name: 'The Rune Lock', kind: 'rune', pattern: ['fire', 'water'], receptors: [{ x: 15, y: 1, els: ['fire', 'water'], rate: 1 }],
@@ -158,7 +161,7 @@ OBJ.G.barrier = CHASM; // the bridge turns the chasm into floor
 // ---------------------------------------------------------------- state
 function newState() {
   return {
-    unlocked: ['fire'], inv: { splitter: 0, joiner: 0, mixer: 0, demerger: 0, wellspring: 1 },
+    unlocked: ['fire'], inv: { splitter: 0, joiner: 0, mixer: 0, demerger: 0, underpass: 0, wellspring: 1 },
     pieces: {},       // tile index → piece
     done: {},         // objective id → true once completed (reward given; permanent ones stay open)
     seen: {},         // tile index → true once seen
@@ -211,7 +214,30 @@ function canPlace(st, type, x, y) {
   if (!PIECES[type].unlimited && !(st.inv[type] > 0)) return `No ${PIECES[type].name}s left.`;
   return null;
 }
+// An underpass is placed as a pair: entrance and exit in a straight line, 2–4 tiles apart.
+function canUnderpass(st, x1, y1, x2, y2) {
+  const why = canPlace(st, 'underpass', x1, y1) || canPlace(st, 'underpass', x2, y2);
+  if (why) return why;
+  const dx = Math.sign(x2 - x1), dy = Math.sign(y2 - y1), dist = Math.abs(x2 - x1) + Math.abs(y2 - y1);
+  if (dx && dy) return 'The exit must be straight ahead of the entrance.';
+  if (dist < UNDERPASS_MIN || dist > UNDERPASS_MAX) return `The exit must be ${UNDERPASS_MIN}–${UNDERPASS_MAX} tiles from the entrance.`;
+  for (let k = 1; k < dist; k++) {
+    const x = x1 + dx * k, y = y1 + dy * k, t = GRID[y][x];
+    if (t === '#' || t === '~' || t === 'B') return 'Tunnels can’t pass under rock, chasms, doors or gates.';
+  }
+  return null;
+}
+function placeUnderpass(st, x1, y1, x2, y2) {
+  const why = canUnderpass(st, x1, y1, x2, y2);
+  if (why) return why;
+  const dir = x2 > x1 ? 1 : x2 < x1 ? 3 : y2 > y1 ? 2 : 0, dist = Math.abs(x2 - x1) + Math.abs(y2 - y1);
+  st.inv.underpass--;
+  st.pieces[idx(x1, y1)] = { type: 'underpass', end: 'in', x: x1, y: y1, dir, link: idx(x2, y2), dist, tunnel: [] };
+  st.pieces[idx(x2, y2)] = { type: 'underpass', end: 'out', x: x2, y: y2, dir, link: idx(x1, y1), dist };
+  return null;
+}
 function place(st, type, x, y, dir = 0, el = null) {
+  if (PIECES[type].pair) return 'Underpasses are placed as a pair: entrance, then exit.';
   const why = canPlace(st, type, x, y);
   if (why) return why;
   if (!PIECES[type].unlimited) st.inv[type]--;
@@ -231,12 +257,14 @@ function remove(st, x, y) {
   if (!PIECES[p.type].unlimited) st.inv[p.type]++;
   delete st.pieces[i];
   if (st.run) st.run.orbs.delete(i);
+  if (p.type === 'underpass') { delete st.pieces[p.link]; if (st.run) st.run.orbs.delete(p.link); } // both ends go together
   return null;
 }
 function rotate(st, x, y, dir) {
   const p = pieceAt(st, x, y);
   if (!p) return 'Nothing here.';
   if (p.type === 'wellspring' && st.run) return 'Wellsprings are fixed during a run.';
+  if (p.type === 'underpass') return 'A tunnel runs from its entrance to its exit; pick it up to re-lay it.';
   p.dir = dir; return null;
 }
 function attune(st, x, y, el) {
@@ -253,7 +281,7 @@ function startRun(st) {
   st.runs++;
   st.run = { beat: 0, orbs: new Map(), nextId: 1, gates: {}, rec: {}, held: {} };
   for (const o of OBJECTIVES) st.run.rec[o.id] = o.receptors.map(() => ({ hist: new Array(WINDOW).fill(0), count: 0, cur: 0, total: 0, seq: [] }));
-  for (const p of Object.values(st.pieces)) { p.timer = 0; if (p.type === 'mixer') p.slots = {}; if (p.type === 'demerger') p.out = null; if (p.type === 'splitter') p.flip = 0; if (p.type === 'joiner') p.last = -1; }
+  for (const p of Object.values(st.pieces)) { p.timer = 0; if (p.type === 'mixer') p.slots = {}; if (p.type === 'demerger') p.out = null; if (p.type === 'splitter') p.flip = 0; if (p.type === 'joiner') p.last = -1; if (p.type === 'underpass') p.tunnel = []; }
   return null;
 }
 function endRun(st) { st.run = null; return null; } // orbs vanish, held gates drop, layout stays
@@ -263,6 +291,7 @@ const stepFrom = (x, y, d) => [x + DIRS[d][0], y + DIRS[d][1]];
 function outDirs(p) {
   if (p.type === 'splitter') { const l = (p.dir + 3) % 4, r = (p.dir + 1) % 4; return p.flip ? [r, l] : [l, r]; }
   if (p.type === 'belt' || p.type === 'joiner' || p.type === 'wellspring' || p.type === 'mixer') return [p.dir];
+  if (p.type === 'underpass') return p.end === 'out' ? [p.dir] : [];
   if (p.type === 'demerger') return [(p.dir + 3) % 4, (p.dir + 1) % 4];
   return [];
 }
@@ -293,6 +322,7 @@ function accepts(st, ti, d, orb, want) {
     case 'joiner': { if (busy || fromFront) return false; const w = want.get(ti); return !(w && w.size > 1 && d === p.last); }
     case 'mixer': return !fromFront && !mixerJammed(st, p) && !p.slots[d] && Object.keys(p.slots).length < 2;
     case 'demerger': return d === p.dir && !p.out && !!PARTS[orb.el];
+    case 'underpass': return p.end === 'in' && d === p.dir && p.tunnel.length < p.dist; // the tunnel holds one orb per tile
     default: return false;
   }
 }
@@ -302,6 +332,7 @@ function deliver(st, ti, orb, d, ev) {
   const p = st.pieces[ti];
   if (p.type === 'mixer') p.slots[d] = orb;
   else if (p.type === 'demerger') p.out = { l: PARTS[orb.el][0], r: PARTS[orb.el][1] };
+  else if (p.type === 'underpass') p.tunnel.push({ orb, wait: p.dist - 1 });
   else { st.run.orbs.set(ti, orb); if (p.type === 'joiner') p.last = d; }
 }
 function step(st) {
@@ -344,6 +375,10 @@ function step(st) {
       const [a, b] = Object.values(p.slots), out = RECIPES[recipeKey(a.el, b.el)];
       if (!out) { p.slots = {}; ev.push({ type: 'fizzle', x: p.x, y: p.y }); }
       else if (push(p.dir, { id: run.nextId++, el: out })) p.slots = {};
+    } else if (p.type === 'underpass' && p.end === 'in' && p.tunnel.length) {
+      for (const t of p.tunnel) if (t.wait > 0) t.wait--;
+      const head = p.tunnel[0], ex = st.pieces[p.link];
+      if (head.wait <= 0 && ex && !run.orbs.has(p.link)) { head.orb.px = ex.x; head.orb.py = ex.y; run.orbs.set(p.link, head.orb); p.tunnel.shift(); }
     } else if (p.type === 'demerger' && p.out) {
       if (p.out.l && push((p.dir + 3) % 4, { id: run.nextId++, el: p.out.l })) p.out.l = null;
       if (p.out.r && push((p.dir + 1) % 4, { id: run.nextId++, el: p.out.r })) p.out.r = null;
@@ -398,16 +433,17 @@ function progress(st, o) {
 }
 
 // ---------------------------------------------------------------- save / load (layout and progress only; a run never persists)
-function serialize(st) { return JSON.stringify({ ...st, run: null, pieces: Object.values(st.pieces).map(({ type, x, y, dir, el }) => ({ type, x, y, dir, el })) }); }
+function serialize(st) { return JSON.stringify({ ...st, run: null, pieces: Object.values(st.pieces).map(({ type, x, y, dir, el, end, link, dist }) => ({ type, x, y, dir, el, end, link, dist })) }); }
 function deserialize(json) {
   const raw = JSON.parse(json), st = { ...newState(), ...raw, run: null, pieces: {} };
-  for (const p of raw.pieces || []) { const q = { ...p, timer: 0, flip: 0, last: -1, slots: {}, out: null }; st.pieces[idx(p.x, p.y)] = q; }
+  st.inv = { ...newState().inv, underpass: 0, ...raw.inv };
+  for (const p of raw.pieces || []) { const q = { ...p, timer: 0, flip: 0, last: -1, slots: {}, out: null, tunnel: [] }; st.pieces[idx(p.x, p.y)] = q; }
   return st;
 }
 
 if (typeof module !== 'undefined') module.exports = {
-  BEAT, WINDOW, SPRING_EVERY, HOLD, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, CHASM,
-  idx, inMap, newState, pieceAt, gateOpen, passable, reachable, canPlace, place, remove, rotate, attune, startRun, endRun,
+  BEAT, WINDOW, SPRING_EVERY, HOLD, UNDERPASS_MIN, UNDERPASS_MAX, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, CHASM,
+  idx, inMap, newState, pieceAt, gateOpen, passable, reachable, canPlace, place, canUnderpass, placeUnderpass, remove, rotate, attune, startRun, endRun,
   outDirs, feeders, mixerJammed, step, rateOf, satisfied, progress, serialize, deserialize,
 };
 
@@ -435,7 +471,8 @@ const persist = () => { try { localStorage.setItem(SAVE_KEY, serialize(st)); } c
 
 let sheet = null, sel = null, tool = 'inspect', toolDir = 0, speed = 1, acc = 0, toastMsg = '', toastUntil = 0, reach = reachable(st);
 const ORB_COL = { fire: '#ff7a33', water: '#3d9be8', earth: '#b8864a', air: '#d6f0fa', steam: '#dfe6ee', magma: '#ff4a1a', mud: '#7d5a38', lightning: '#ffe04b', ice: '#a6ecff', dust: '#d9c08a' };
-const TOOL_ORDER = ['inspect', 'belt', 'splitter', 'joiner', 'mixer', 'demerger', 'wellspring', 'erase', 'facing'];
+const TOOL_ORDER = ['inspect', 'belt', 'splitter', 'joiner', 'mixer', 'demerger', 'underpass', 'wellspring', 'erase', 'facing'];
+let tunnelStart = null; // first tap of an underpass: its entrance
 const KIND_TEXT = {
   door: 'Door: keep the flow at the rate for 4 s and it opens for good.',
   held: 'Held gate: open only while the flow keeps coming. It drops when the run ends.',
@@ -540,14 +577,22 @@ function eraseAt(x, y) { const p = inMap(x, y) && pieceAt(st, x, y); if (p && p.
 function tapTile(x, y) {
   if (!inMap(x, y)) return;
   const i = idx(x, y), p = st.pieces[i];
-  if (tool === 'inspect' || tool === 'facing' || RECEPTOR.has(i) || BARRIER.has(i)) { sel = { x, y }; openSheet('tile'); return; }
+  if (tool === 'inspect' || tool === 'facing' || RECEPTOR.has(i)) { sel = { x, y }; openSheet('tile'); return; }
   if (tool === 'erase') { if (p) { const why = remove(st, x, y); if (why) say(why); else changed(); } return; }
+  if (tool === 'underpass' && !p) {
+    if (!tunnelStart) { const why = canPlace(st, 'underpass', x, y); if (why) say(why); else { tunnelStart = { x, y }; renderBars(); } return; }
+    if (tunnelStart.x === x && tunnelStart.y === y) { tunnelStart = null; renderBars(); return; }
+    const why = placeUnderpass(st, tunnelStart.x, tunnelStart.y, x, y);
+    if (why) say(why); else { tunnelStart = null; changed(); }
+    return;
+  }
   if (p) {
-    if (p.type === tool && p.type !== 'wellspring') { p.dir = toolDir; changed(); return; } // same piece: re-aim it
+    if (p.type === tool && p.type !== 'wellspring' && p.type !== 'underpass') { p.dir = toolDir; changed(); return; } // same piece: re-aim it
     sel = { x, y }; openSheet('tile'); return;
   }
   const why = place(st, tool, x, y, toolDir);
-  if (why) say(why);
+  if (why && BARRIER.has(i)) { sel = { x, y }; openSheet('tile'); say(why); } // a closed door: show what opens it
+  else if (why) say(why);
   else { changed(); if (tool === 'wellspring') { sel = { x, y }; openSheet('tile'); } }
 }
 function say(msg, ms = 3200) { toastMsg = msg; toastUntil = performance.now() + ms; }
@@ -581,6 +626,12 @@ function draw(now) {
   // dim what you can see but not reach
   ctx.fillStyle = 'rgba(8,6,12,.5)';
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = idx(x, y); if (st.seen[i] && !reach[i] && GRID[y][x] !== '#') ctx.fillRect(sx(x), sy(y), z + 0.5, z + 0.5); }
+  if (tunnelStart && tool === 'underpass') {
+    const { x: tx, y: ty } = tunnelStart; ctx.strokeStyle = '#9fd6ef'; ctx.setLineDash([4, 3]); ctx.lineWidth = 2;
+    ctx.strokeRect(sx(tx) + 1, sy(ty) + 1, z - 2, z - 2);
+    for (const [dx, dy] of DIRS) for (let k = UNDERPASS_MIN; k <= UNDERPASS_MAX; k++) { const nx = tx + dx * k, ny = ty + dy * k; if (inMap(nx, ny) && !canUnderpass(st, tx, ty, nx, ny)) { circle(sx(nx + 0.5), sy(ny + 0.5), z * 0.12, 'rgba(159,214,239,.7)'); } }
+    ctx.setLineDash([]);
+  }
   if (sel && sheet === 'tile') { ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 2; ctx.strokeRect(sx(sel.x) + 1, sy(sel.y) + 1, z - 2, z - 2); }
 }
 function drawTile(x, y, z, now) {
@@ -676,6 +727,27 @@ function drawPiece(p, z, now) {
     if (jam) emoji('⚠️', cx + z * 0.3, cy - z * 0.3, z * 0.36);
     return;
   }
+  if (p.type === 'underpass') {
+    if (p.end === 'in') { // dashed line underground, with orbs in transit shown faintly
+      const ex = st.pieces[p.link];
+      if (ex) {
+        ctx.strokeStyle = 'rgba(159,214,239,.35)'; ctx.setLineDash([z * 0.1, z * 0.12]); ctx.lineWidth = Math.max(1, z * 0.05);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(sx(ex.x + 0.5), sy(ex.y + 0.5)); ctx.stroke(); ctx.setLineDash([]);
+        ctx.globalAlpha = 0.45;
+        for (const t of p.tunnel || []) { const f = 1 - t.wait / p.dist; drawOrb(cx + (sx(ex.x + 0.5) - cx) * f, cy + (sy(ex.y + 0.5) - cy) * f, z * 0.1, t.orb.el); }
+        ctx.globalAlpha = 1;
+      }
+    }
+    inLocal(p, () => {
+      ctx.beginPath(); ctx.roundRect(-h * 0.86, -h, h * 1.72, z, z * 0.1); ctx.fillStyle = '#4b4038'; ctx.fill();
+      // the arch: entrance mouth at the far side, exit mouth at the near side
+      const my = p.end === 'in' ? -h * 0.15 : h * 0.15;
+      ctx.fillStyle = '#6a6070'; ctx.beginPath(); ctx.arc(0, my, h * 0.62, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#120f18'; ctx.beginPath(); ctx.arc(0, my, h * 0.42, Math.PI, 0); ctx.fill();
+      chevron(0, p.end === 'in' ? h * 0.55 : -h * 0.55, z * 0.12, 'rgba(230,205,150,.7)');
+    });
+    return;
+  }
   if (p.type === 'demerger') {
     inLocal(p, () => {
       ctx.beginPath(); ctx.roundRect(-h * 0.88, -h * 0.88, z * 0.88, z * 0.88, z * 0.2); ctx.fillStyle = '#2e3a44'; ctx.fill();
@@ -714,6 +786,7 @@ function toolHint() {
   if (tool === 'inspect') return st.run ? 'Tap anything to inspect it.' : 'Tap a wellspring to set its element, then ▶.';
   if (tool === 'facing') return 'New pieces face this way. Tap again to turn.';
   if (tool === 'erase') return 'Tap or drag to pick pieces up.';
+  if (tool === 'underpass') return tunnelStart ? 'Now tap the exit: 2–4 tiles straight ahead (dots show where).' : `Underpass · ${st.inv.underpass || 0} left · tap the entrance first`;
   const P = PIECES[tool];
   return `${P.name} ${ARROWS[toolDir]} · ${P.unlimited ? 'unlimited' : `${st.inv[tool] || 0} left`}${tool === 'belt' ? ' · drag to lay a line' : ''}${tool === 'wellspring' ? ' · spring spots only, between runs' : ''}`;
 }
@@ -724,7 +797,7 @@ function renderTools() {
     if (k === 'facing') return el('button', { class: 'tool', title: 'Facing for new pieces', onclick: () => { toolDir = (toolDir + 1) % 4; renderTools(); renderBars(); } }, el('span', { class: 'ic' }, ARROWS[toolDir]), el('span', { class: 'cost' }, 'Facing'));
     const P = PIECES[k], n = P.unlimited ? '∞' : (st.inv[k] || 0), placed = Object.values(st.pieces).filter((p) => p.type === k).length;
     const locked = !P.unlimited && !n && !placed;
-    return el('button', { class: 'tool' + (tool === k ? ' on' : '') + (locked ? ' locked' : ''), title: P.name, onclick: () => { if (locked) { say(`🔒 ${P.name}: earn one from a goal.`); return; } tool = k; if (sheet === 'tile') closeSheet(); renderTools(); renderBars(); } },
+    return el('button', { class: 'tool' + (tool === k ? ' on' : '') + (locked ? ' locked' : ''), title: P.name, onclick: () => { if (locked) { say(`🔒 ${P.name}: earn one from a goal.`); return; } tool = k; tunnelStart = null; if (sheet === 'tile') closeSheet(); renderTools(); renderBars(); } },
       locked ? el('span', { class: 'lock' }, '🔒') : null, el('span', { class: 'ic' }, P.icon), el('span', { class: 'cost' }, `${n}`));
   }));
 }
@@ -776,7 +849,7 @@ function goalsSheet() {
 function tileSheet() {
   const { x, y } = sel, i = idx(x, y), p = st.pieces[i];
   if (RECEPTOR.has(i)) return objectiveCard(OBJ[RECEPTOR.get(i)[0]]);
-  if (BARRIER.has(i)) return objectiveCard(OBJ[BARRIER.get(i)]);
+  if (BARRIER.has(i) && !p) return objectiveCard(OBJ[BARRIER.get(i)]);
   if (!p) {
     const t = GRID[y][x];
     const name = { '#': 'Rock', '.': 'Floor', S: 'Spring spot', '~': st.done.G ? 'Bridge' : 'Chasm' }[t];
@@ -789,6 +862,11 @@ function tileSheet() {
   if (p.type === 'wellspring') {
     card.append(el('h3', {}, st.run ? 'Element (fixed until the run ends)' : 'Element for the next run'),
       el('div', { class: 'row' }, ...st.unlocked.map((e) => btn([orbDot(e), ' ', ORBS[e].name], act(() => attune(st, x, y, e)), { small: true, on: p.el === e, disabled: !!st.run }))));
+  }
+  if (p.type === 'underpass') {
+    card.append(el('p', {}, p.end === 'in' ? `Entrance: orbs go under ${p.dist - 1} tile${p.dist > 2 ? 's' : ''} and come up at the exit.` : 'Exit: orbs come up here and carry on forward.'),
+      el('div', { class: 'row' }, btn('Pick up both ends', act(() => { const why = remove(st, x, y); if (!why) closeSheet(); return why; }), { small: true })));
+    return card;
   }
   const fixed = p.type === 'wellspring' && st.run;
   card.append(el('h3', {}, 'Facing'), el('div', { class: 'row' }, ...ARROWS.map((a, d) => btn(a, act(() => rotate(st, x, y, d)), { small: true, on: p.dir === d, disabled: fixed })),

@@ -55,6 +55,7 @@ put(st, 'mixer', 9, 10, Lf);
 put(st, 'belt', 8, 10, Lf);                                                                  // under the sluice gate
 line(st, [...row(10, 7, 3, Lf), [2, 10, D], [2, 11, D]]);
 t = runUntil(st, 'D'); ok(t > 0, `D The Steam Door opens after ${t} beats (sluice still held: ${L.gateOpen(st, 'C')})`);
+ok(st.inv.demerger === 1 && st.inv.underpass === 1, 'D gives a Demerger and an Underpass');
 
 // The Narrow: steam through the one-tile gap, demerge on the far side.
 for (const [x, y] of [[2, 10], [2, 11], [3, 10]]) L.remove(st, x, y);
@@ -115,6 +116,29 @@ ok(Object.values(st.pieces).filter((p) => p.type === 'mixer').every((p) => !L.mi
   const s = L.newState(); put(s, 'wellspring', 10, 25, U, 'fire'); s.unlocked.push('water');
   L.startRun(s); ok(!!L.attune(s, 10, 25, 'water'), 'attuning is refused during a run'); L.endRun(s);
   ok(!L.attune(s, 10, 25, 'water'), 'attuning works between runs');
+}
+{ // underpass: a fire line crosses a water line underneath, and tunnels refuse rock and doors
+  const s = L.newState(); s.unlocked.push('water'); s.inv.wellspring = 2; s.inv.underpass = 2;
+  put(s, 'wellspring', 10, 25, U, 'fire'); put(s, 'wellspring', 14, 25, U, 'water');
+  line(s, [[10, 24, U], [10, 23, R]]);                                  // fire heads right along row 23…
+  must(L.placeUnderpass(s, 11, 23, 13, 23), 'underpass');              // …under the water column at x=12…
+  line(s, [[14, 23, U], [14, 22, U]]);                                  // …and on up x=14 (water's spring is below, so join from the side)
+  line(s, [[14, 24, Lf], [13, 24, Lf], [12, 24, U], [12, 23, U], [12, 22, U], [12, 21, Lf], [11, 21, Lf], [10, 21, Lf]]);
+  L.startRun(s); runBeats(s, 80);
+  const fireAt = s.run.rec.A[0].total, seen = [...s.run.orbs.values()].map((o) => o.el);
+  ok(L.pieceAt(s, 13, 23).end === 'out' && L.pieceAt(s, 11, 23).end === 'in', 'underpass placed as entrance and exit');
+  ok(s.run.orbs.has(L.idx(14, 22)) || s.run.orbs.has(L.idx(14, 23)), 'fire comes out of the exit beyond the water line');
+  ok(fireAt === 0 && seen.includes('water'), 'the water line underneath is untouched (water still reaches its belts; no fire leaks into it)');
+  L.endRun(s);
+  ok(!!L.canUnderpass(s, 9, 22, 9, 19), 'a tunnel refuses to pass under a door or rock');
+  ok(!!L.canUnderpass(s, 10, 22, 12, 24), 'a tunnel must run straight');
+  ok(!!L.canUnderpass(s, 10, 22, 11, 22), 'a tunnel must jump at least one tile');
+  must(L.remove(s, 13, 23), 'remove exit'); ok(!L.pieceAt(s, 11, 23) && s.inv.underpass === 2, 'picking up one end removes both and refunds one Underpass');
+}
+{ // opened doors take belts
+  const s = L.newState(); s.done.A = true;
+  ok(!L.canPlace(s, 'belt', 12, 20), 'a belt can go on an opened door tile');
+  ok(!!L.canPlace(s, 'belt', 12, 13), 'but not on a closed one');
 }
 { // wellsprings only on spring spots
   const s = L.newState(); ok(!!L.canPlace(s, 'wellspring', 11, 23), 'wellsprings refuse ordinary floor');

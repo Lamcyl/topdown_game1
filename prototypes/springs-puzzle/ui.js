@@ -22,7 +22,8 @@ const persist = () => { try { localStorage.setItem(SAVE_KEY, serialize(st)); } c
 
 let sheet = null, sel = null, tool = 'inspect', toolDir = 0, speed = 1, acc = 0, toastMsg = '', toastUntil = 0, reach = reachable(st);
 const ORB_COL = { fire: '#ff7a33', water: '#3d9be8', earth: '#b8864a', air: '#d6f0fa', steam: '#dfe6ee', magma: '#ff4a1a', mud: '#7d5a38', lightning: '#ffe04b', ice: '#a6ecff', dust: '#d9c08a' };
-const TOOL_ORDER = ['inspect', 'belt', 'splitter', 'joiner', 'mixer', 'demerger', 'wellspring', 'erase', 'facing'];
+const TOOL_ORDER = ['inspect', 'belt', 'splitter', 'joiner', 'mixer', 'demerger', 'underpass', 'wellspring', 'erase', 'facing'];
+let tunnelStart = null; // first tap of an underpass: its entrance
 const KIND_TEXT = {
   door: 'Door: keep the flow at the rate for 4 s and it opens for good.',
   held: 'Held gate: open only while the flow keeps coming. It drops when the run ends.',
@@ -127,14 +128,22 @@ function eraseAt(x, y) { const p = inMap(x, y) && pieceAt(st, x, y); if (p && p.
 function tapTile(x, y) {
   if (!inMap(x, y)) return;
   const i = idx(x, y), p = st.pieces[i];
-  if (tool === 'inspect' || tool === 'facing' || RECEPTOR.has(i) || BARRIER.has(i)) { sel = { x, y }; openSheet('tile'); return; }
+  if (tool === 'inspect' || tool === 'facing' || RECEPTOR.has(i)) { sel = { x, y }; openSheet('tile'); return; }
   if (tool === 'erase') { if (p) { const why = remove(st, x, y); if (why) say(why); else changed(); } return; }
+  if (tool === 'underpass' && !p) {
+    if (!tunnelStart) { const why = canPlace(st, 'underpass', x, y); if (why) say(why); else { tunnelStart = { x, y }; renderBars(); } return; }
+    if (tunnelStart.x === x && tunnelStart.y === y) { tunnelStart = null; renderBars(); return; }
+    const why = placeUnderpass(st, tunnelStart.x, tunnelStart.y, x, y);
+    if (why) say(why); else { tunnelStart = null; changed(); }
+    return;
+  }
   if (p) {
-    if (p.type === tool && p.type !== 'wellspring') { p.dir = toolDir; changed(); return; } // same piece: re-aim it
+    if (p.type === tool && p.type !== 'wellspring' && p.type !== 'underpass') { p.dir = toolDir; changed(); return; } // same piece: re-aim it
     sel = { x, y }; openSheet('tile'); return;
   }
   const why = place(st, tool, x, y, toolDir);
-  if (why) say(why);
+  if (why && BARRIER.has(i)) { sel = { x, y }; openSheet('tile'); say(why); } // a closed door: show what opens it
+  else if (why) say(why);
   else { changed(); if (tool === 'wellspring') { sel = { x, y }; openSheet('tile'); } }
 }
 function say(msg, ms = 3200) { toastMsg = msg; toastUntil = performance.now() + ms; }
@@ -168,6 +177,12 @@ function draw(now) {
   // dim what you can see but not reach
   ctx.fillStyle = 'rgba(8,6,12,.5)';
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = idx(x, y); if (st.seen[i] && !reach[i] && GRID[y][x] !== '#') ctx.fillRect(sx(x), sy(y), z + 0.5, z + 0.5); }
+  if (tunnelStart && tool === 'underpass') {
+    const { x: tx, y: ty } = tunnelStart; ctx.strokeStyle = '#9fd6ef'; ctx.setLineDash([4, 3]); ctx.lineWidth = 2;
+    ctx.strokeRect(sx(tx) + 1, sy(ty) + 1, z - 2, z - 2);
+    for (const [dx, dy] of DIRS) for (let k = UNDERPASS_MIN; k <= UNDERPASS_MAX; k++) { const nx = tx + dx * k, ny = ty + dy * k; if (inMap(nx, ny) && !canUnderpass(st, tx, ty, nx, ny)) { circle(sx(nx + 0.5), sy(ny + 0.5), z * 0.12, 'rgba(159,214,239,.7)'); } }
+    ctx.setLineDash([]);
+  }
   if (sel && sheet === 'tile') { ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 2; ctx.strokeRect(sx(sel.x) + 1, sy(sel.y) + 1, z - 2, z - 2); }
 }
 function drawTile(x, y, z, now) {
@@ -263,6 +278,27 @@ function drawPiece(p, z, now) {
     if (jam) emoji('⚠️', cx + z * 0.3, cy - z * 0.3, z * 0.36);
     return;
   }
+  if (p.type === 'underpass') {
+    if (p.end === 'in') { // dashed line underground, with orbs in transit shown faintly
+      const ex = st.pieces[p.link];
+      if (ex) {
+        ctx.strokeStyle = 'rgba(159,214,239,.35)'; ctx.setLineDash([z * 0.1, z * 0.12]); ctx.lineWidth = Math.max(1, z * 0.05);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(sx(ex.x + 0.5), sy(ex.y + 0.5)); ctx.stroke(); ctx.setLineDash([]);
+        ctx.globalAlpha = 0.45;
+        for (const t of p.tunnel || []) { const f = 1 - t.wait / p.dist; drawOrb(cx + (sx(ex.x + 0.5) - cx) * f, cy + (sy(ex.y + 0.5) - cy) * f, z * 0.1, t.orb.el); }
+        ctx.globalAlpha = 1;
+      }
+    }
+    inLocal(p, () => {
+      ctx.beginPath(); ctx.roundRect(-h * 0.86, -h, h * 1.72, z, z * 0.1); ctx.fillStyle = '#4b4038'; ctx.fill();
+      // the arch: entrance mouth at the far side, exit mouth at the near side
+      const my = p.end === 'in' ? -h * 0.15 : h * 0.15;
+      ctx.fillStyle = '#6a6070'; ctx.beginPath(); ctx.arc(0, my, h * 0.62, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#120f18'; ctx.beginPath(); ctx.arc(0, my, h * 0.42, Math.PI, 0); ctx.fill();
+      chevron(0, p.end === 'in' ? h * 0.55 : -h * 0.55, z * 0.12, 'rgba(230,205,150,.7)');
+    });
+    return;
+  }
   if (p.type === 'demerger') {
     inLocal(p, () => {
       ctx.beginPath(); ctx.roundRect(-h * 0.88, -h * 0.88, z * 0.88, z * 0.88, z * 0.2); ctx.fillStyle = '#2e3a44'; ctx.fill();
@@ -301,6 +337,7 @@ function toolHint() {
   if (tool === 'inspect') return st.run ? 'Tap anything to inspect it.' : 'Tap a wellspring to set its element, then ▶.';
   if (tool === 'facing') return 'New pieces face this way. Tap again to turn.';
   if (tool === 'erase') return 'Tap or drag to pick pieces up.';
+  if (tool === 'underpass') return tunnelStart ? 'Now tap the exit: 2–4 tiles straight ahead (dots show where).' : `Underpass · ${st.inv.underpass || 0} left · tap the entrance first`;
   const P = PIECES[tool];
   return `${P.name} ${ARROWS[toolDir]} · ${P.unlimited ? 'unlimited' : `${st.inv[tool] || 0} left`}${tool === 'belt' ? ' · drag to lay a line' : ''}${tool === 'wellspring' ? ' · spring spots only, between runs' : ''}`;
 }
@@ -311,7 +348,7 @@ function renderTools() {
     if (k === 'facing') return el('button', { class: 'tool', title: 'Facing for new pieces', onclick: () => { toolDir = (toolDir + 1) % 4; renderTools(); renderBars(); } }, el('span', { class: 'ic' }, ARROWS[toolDir]), el('span', { class: 'cost' }, 'Facing'));
     const P = PIECES[k], n = P.unlimited ? '∞' : (st.inv[k] || 0), placed = Object.values(st.pieces).filter((p) => p.type === k).length;
     const locked = !P.unlimited && !n && !placed;
-    return el('button', { class: 'tool' + (tool === k ? ' on' : '') + (locked ? ' locked' : ''), title: P.name, onclick: () => { if (locked) { say(`🔒 ${P.name}: earn one from a goal.`); return; } tool = k; if (sheet === 'tile') closeSheet(); renderTools(); renderBars(); } },
+    return el('button', { class: 'tool' + (tool === k ? ' on' : '') + (locked ? ' locked' : ''), title: P.name, onclick: () => { if (locked) { say(`🔒 ${P.name}: earn one from a goal.`); return; } tool = k; tunnelStart = null; if (sheet === 'tile') closeSheet(); renderTools(); renderBars(); } },
       locked ? el('span', { class: 'lock' }, '🔒') : null, el('span', { class: 'ic' }, P.icon), el('span', { class: 'cost' }, `${n}`));
   }));
 }
@@ -363,7 +400,7 @@ function goalsSheet() {
 function tileSheet() {
   const { x, y } = sel, i = idx(x, y), p = st.pieces[i];
   if (RECEPTOR.has(i)) return objectiveCard(OBJ[RECEPTOR.get(i)[0]]);
-  if (BARRIER.has(i)) return objectiveCard(OBJ[BARRIER.get(i)]);
+  if (BARRIER.has(i) && !p) return objectiveCard(OBJ[BARRIER.get(i)]);
   if (!p) {
     const t = GRID[y][x];
     const name = { '#': 'Rock', '.': 'Floor', S: 'Spring spot', '~': st.done.G ? 'Bridge' : 'Chasm' }[t];
@@ -376,6 +413,11 @@ function tileSheet() {
   if (p.type === 'wellspring') {
     card.append(el('h3', {}, st.run ? 'Element (fixed until the run ends)' : 'Element for the next run'),
       el('div', { class: 'row' }, ...st.unlocked.map((e) => btn([orbDot(e), ' ', ORBS[e].name], act(() => attune(st, x, y, e)), { small: true, on: p.el === e, disabled: !!st.run }))));
+  }
+  if (p.type === 'underpass') {
+    card.append(el('p', {}, p.end === 'in' ? `Entrance: orbs go under ${p.dist - 1} tile${p.dist > 2 ? 's' : ''} and come up at the exit.` : 'Exit: orbs come up here and carry on forward.'),
+      el('div', { class: 'row' }, btn('Pick up both ends', act(() => { const why = remove(st, x, y); if (!why) closeSheet(); return why; }), { small: true })));
+    return card;
   }
   const fixed = p.type === 'wellspring' && st.run;
   card.append(el('h3', {}, 'Facing'), el('div', { class: 'row' }, ...ARROWS.map((a, d) => btn(a, act(() => rotate(st, x, y, d)), { small: true, on: p.dir === d, disabled: fixed })),

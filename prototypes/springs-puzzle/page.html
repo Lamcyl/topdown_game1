@@ -49,7 +49,7 @@
   .btn.primary { background: #4b3a17; border-color: var(--gold); color: #ffe7b0; }
   .btn.small { padding: 3px 8px; min-height: 30px; font-size: 12px; }
   .btn.on { border-color: var(--gold); color: var(--gold); }
-  .tools { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+  .tools { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; }
   .tool { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; height: 46px; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: #241f30; color: var(--fg); cursor: pointer; font: 600 10px var(--body); }
   .tool .ic { font-size: 19px; line-height: 22px; }
   .tool .cost { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -64,7 +64,8 @@
   .tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
   .tag.perm { color: var(--gold); border-color: #6b5527; }
   .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 12px; font-size: 12px; }
-  @media (min-height: 760px) { .tool { height: 52px; } .tool .ic { font-size: 22px; } }
+  @media (max-width: 400px) { .tools { grid-template-columns: repeat(5, 1fr); } .tool { height: 40px; } .tool .ic { font-size: 17px; line-height: 19px; } }
+  @media (min-height: 760px) and (min-width: 401px) { .tool { height: 52px; } .tool .ic { font-size: 22px; } }
 </style>
 </head>
 <body>

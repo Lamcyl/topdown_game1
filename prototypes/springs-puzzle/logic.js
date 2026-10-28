@@ -23,9 +23,11 @@ const PIECES = {
   joiner: { name: 'Joiner', icon: '⑃', info: 'Takes from behind and both sides, alternating between them, and sends forward. Makes sequences.' },
   mixer: { name: 'Mixer', icon: '⚗️', info: 'Takes one orb from each of two inputs and sends one merged orb out of the gold notch (fire + water → steam). A third input jams it.' },
   demerger: { name: 'Demerger', icon: '⚖', info: 'Takes a merged orb from behind and splits it: first part out the left, second out the right (steam → fire left, water right).' },
+  underpass: { name: 'Underpass', icon: '🕳️', pair: true, info: 'A tunnel: tap the entrance, then the exit 2–4 tiles straight ahead. Orbs go under whatever is between (belts, pieces, goals) but never under rock, chasms, doors or gates.' },
   wellspring: { name: 'Wellspring', icon: '⛲', info: 'Goes on a spring spot by the start. Emits 1 orb a second of the element you chose for this run.' },
 };
-const PIECE_ORDER = ['belt', 'splitter', 'joiner', 'mixer', 'demerger', 'wellspring'];
+const PIECE_ORDER = ['belt', 'splitter', 'joiner', 'mixer', 'demerger', 'underpass', 'wellspring'];
+const UNDERPASS_MIN = 2, UNDERPASS_MAX = 4; // exit distance from the entrance, in tiles
 
 // ---------------------------------------------------------------- the level
 // Tiles: '#' rock, '.' floor, 'S' spring spot, '~' chasm, 'B' barrier (owned by an objective).
@@ -59,7 +61,7 @@ const OBJECTIVES = [
   { id: 'C', name: 'The Sluice', kind: 'held', receptors: [{ x: 15, y: 8, el: 'water', rate: 0.5 }], barrier: [[8, 9], [8, 10], [8, 11]],
     reward: { mixer: 1 }, hint: 'The sluice stays up only while water keeps flowing in. Everything west passes under it.' },
   { id: 'D', name: 'The Steam Door', kind: 'door', receptors: [{ x: 2, y: 12, el: 'steam', rate: 0.5 }], barrier: [[2, 7], [3, 7]],
-    reward: { demerger: 1 }, hint: 'Steam is fire and water mixed. Keep the sluice fed too.' },
+    reward: { demerger: 1, underpass: 1 }, hint: 'Steam is fire and water mixed. Keep the sluice fed too.' },
   { id: 'E', name: 'The Narrow', kind: 'door', receptors: [{ x: 7, y: 1, el: 'fire', rate: 0.5 }, { x: 7, y: 6, el: 'water', rate: 0.5 }], barrier: [[8, 2], [8, 3], [8, 4]],
     reward: { joiner: 1 }, hint: 'Only one lane fits through the gap. What goes in merged can come out apart.' },
   { id: 'F', name: 'The Rune Lock', kind: 'rune', pattern: ['fire', 'water'], receptors: [{ x: 15, y: 1, els: ['fire', 'water'], rate: 1 }],
@@ -86,7 +88,7 @@ OBJ.G.barrier = CHASM; // the bridge turns the chasm into floor
 // ---------------------------------------------------------------- state
 function newState() {
   return {
-    unlocked: ['fire'], inv: { splitter: 0, joiner: 0, mixer: 0, demerger: 0, wellspring: 1 },
+    unlocked: ['fire'], inv: { splitter: 0, joiner: 0, mixer: 0, demerger: 0, underpass: 0, wellspring: 1 },
     pieces: {},       // tile index → piece
     done: {},         // objective id → true once completed (reward given; permanent ones stay open)
     seen: {},         // tile index → true once seen
@@ -139,7 +141,30 @@ function canPlace(st, type, x, y) {
   if (!PIECES[type].unlimited && !(st.inv[type] > 0)) return `No ${PIECES[type].name}s left.`;
   return null;
 }
+// An underpass is placed as a pair: entrance and exit in a straight line, 2–4 tiles apart.
+function canUnderpass(st, x1, y1, x2, y2) {
+  const why = canPlace(st, 'underpass', x1, y1) || canPlace(st, 'underpass', x2, y2);
+  if (why) return why;
+  const dx = Math.sign(x2 - x1), dy = Math.sign(y2 - y1), dist = Math.abs(x2 - x1) + Math.abs(y2 - y1);
+  if (dx && dy) return 'The exit must be straight ahead of the entrance.';
+  if (dist < UNDERPASS_MIN || dist > UNDERPASS_MAX) return `The exit must be ${UNDERPASS_MIN}–${UNDERPASS_MAX} tiles from the entrance.`;
+  for (let k = 1; k < dist; k++) {
+    const x = x1 + dx * k, y = y1 + dy * k, t = GRID[y][x];
+    if (t === '#' || t === '~' || t === 'B') return 'Tunnels can’t pass under rock, chasms, doors or gates.';
+  }
+  return null;
+}
+function placeUnderpass(st, x1, y1, x2, y2) {
+  const why = canUnderpass(st, x1, y1, x2, y2);
+  if (why) return why;
+  const dir = x2 > x1 ? 1 : x2 < x1 ? 3 : y2 > y1 ? 2 : 0, dist = Math.abs(x2 - x1) + Math.abs(y2 - y1);
+  st.inv.underpass--;
+  st.pieces[idx(x1, y1)] = { type: 'underpass', end: 'in', x: x1, y: y1, dir, link: idx(x2, y2), dist, tunnel: [] };
+  st.pieces[idx(x2, y2)] = { type: 'underpass', end: 'out', x: x2, y: y2, dir, link: idx(x1, y1), dist };
+  return null;
+}
 function place(st, type, x, y, dir = 0, el = null) {
+  if (PIECES[type].pair) return 'Underpasses are placed as a pair: entrance, then exit.';
   const why = canPlace(st, type, x, y);
   if (why) return why;
   if (!PIECES[type].unlimited) st.inv[type]--;
@@ -159,12 +184,14 @@ function remove(st, x, y) {
   if (!PIECES[p.type].unlimited) st.inv[p.type]++;
   delete st.pieces[i];
   if (st.run) st.run.orbs.delete(i);
+  if (p.type === 'underpass') { delete st.pieces[p.link]; if (st.run) st.run.orbs.delete(p.link); } // both ends go together
   return null;
 }
 function rotate(st, x, y, dir) {
   const p = pieceAt(st, x, y);
   if (!p) return 'Nothing here.';
   if (p.type === 'wellspring' && st.run) return 'Wellsprings are fixed during a run.';
+  if (p.type === 'underpass') return 'A tunnel runs from its entrance to its exit; pick it up to re-lay it.';
   p.dir = dir; return null;
 }
 function attune(st, x, y, el) {
@@ -181,7 +208,7 @@ function startRun(st) {
   st.runs++;
   st.run = { beat: 0, orbs: new Map(), nextId: 1, gates: {}, rec: {}, held: {} };
   for (const o of OBJECTIVES) st.run.rec[o.id] = o.receptors.map(() => ({ hist: new Array(WINDOW).fill(0), count: 0, cur: 0, total: 0, seq: [] }));
-  for (const p of Object.values(st.pieces)) { p.timer = 0; if (p.type === 'mixer') p.slots = {}; if (p.type === 'demerger') p.out = null; if (p.type === 'splitter') p.flip = 0; if (p.type === 'joiner') p.last = -1; }
+  for (const p of Object.values(st.pieces)) { p.timer = 0; if (p.type === 'mixer') p.slots = {}; if (p.type === 'demerger') p.out = null; if (p.type === 'splitter') p.flip = 0; if (p.type === 'joiner') p.last = -1; if (p.type === 'underpass') p.tunnel = []; }
   return null;
 }
 function endRun(st) { st.run = null; return null; } // orbs vanish, held gates drop, layout stays
@@ -191,6 +218,7 @@ const stepFrom = (x, y, d) => [x + DIRS[d][0], y + DIRS[d][1]];
 function outDirs(p) {
   if (p.type === 'splitter') { const l = (p.dir + 3) % 4, r = (p.dir + 1) % 4; return p.flip ? [r, l] : [l, r]; }
   if (p.type === 'belt' || p.type === 'joiner' || p.type === 'wellspring' || p.type === 'mixer') return [p.dir];
+  if (p.type === 'underpass') return p.end === 'out' ? [p.dir] : [];
   if (p.type === 'demerger') return [(p.dir + 3) % 4, (p.dir + 1) % 4];
   return [];
 }
@@ -221,6 +249,7 @@ function accepts(st, ti, d, orb, want) {
     case 'joiner': { if (busy || fromFront) return false; const w = want.get(ti); return !(w && w.size > 1 && d === p.last); }
     case 'mixer': return !fromFront && !mixerJammed(st, p) && !p.slots[d] && Object.keys(p.slots).length < 2;
     case 'demerger': return d === p.dir && !p.out && !!PARTS[orb.el];
+    case 'underpass': return p.end === 'in' && d === p.dir && p.tunnel.length < p.dist; // the tunnel holds one orb per tile
     default: return false;
   }
 }
@@ -230,6 +259,7 @@ function deliver(st, ti, orb, d, ev) {
   const p = st.pieces[ti];
   if (p.type === 'mixer') p.slots[d] = orb;
   else if (p.type === 'demerger') p.out = { l: PARTS[orb.el][0], r: PARTS[orb.el][1] };
+  else if (p.type === 'underpass') p.tunnel.push({ orb, wait: p.dist - 1 });
   else { st.run.orbs.set(ti, orb); if (p.type === 'joiner') p.last = d; }
 }
 function step(st) {
@@ -272,6 +302,10 @@ function step(st) {
       const [a, b] = Object.values(p.slots), out = RECIPES[recipeKey(a.el, b.el)];
       if (!out) { p.slots = {}; ev.push({ type: 'fizzle', x: p.x, y: p.y }); }
       else if (push(p.dir, { id: run.nextId++, el: out })) p.slots = {};
+    } else if (p.type === 'underpass' && p.end === 'in' && p.tunnel.length) {
+      for (const t of p.tunnel) if (t.wait > 0) t.wait--;
+      const head = p.tunnel[0], ex = st.pieces[p.link];
+      if (head.wait <= 0 && ex && !run.orbs.has(p.link)) { head.orb.px = ex.x; head.orb.py = ex.y; run.orbs.set(p.link, head.orb); p.tunnel.shift(); }
     } else if (p.type === 'demerger' && p.out) {
       if (p.out.l && push((p.dir + 3) % 4, { id: run.nextId++, el: p.out.l })) p.out.l = null;
       if (p.out.r && push((p.dir + 1) % 4, { id: run.nextId++, el: p.out.r })) p.out.r = null;
@@ -326,15 +360,16 @@ function progress(st, o) {
 }
 
 // ---------------------------------------------------------------- save / load (layout and progress only; a run never persists)
-function serialize(st) { return JSON.stringify({ ...st, run: null, pieces: Object.values(st.pieces).map(({ type, x, y, dir, el }) => ({ type, x, y, dir, el })) }); }
+function serialize(st) { return JSON.stringify({ ...st, run: null, pieces: Object.values(st.pieces).map(({ type, x, y, dir, el, end, link, dist }) => ({ type, x, y, dir, el, end, link, dist })) }); }
 function deserialize(json) {
   const raw = JSON.parse(json), st = { ...newState(), ...raw, run: null, pieces: {} };
-  for (const p of raw.pieces || []) { const q = { ...p, timer: 0, flip: 0, last: -1, slots: {}, out: null }; st.pieces[idx(p.x, p.y)] = q; }
+  st.inv = { ...newState().inv, underpass: 0, ...raw.inv };
+  for (const p of raw.pieces || []) { const q = { ...p, timer: 0, flip: 0, last: -1, slots: {}, out: null, tunnel: [] }; st.pieces[idx(p.x, p.y)] = q; }
   return st;
 }
 
 if (typeof module !== 'undefined') module.exports = {
-  BEAT, WINDOW, SPRING_EVERY, HOLD, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, CHASM,
-  idx, inMap, newState, pieceAt, gateOpen, passable, reachable, canPlace, place, remove, rotate, attune, startRun, endRun,
+  BEAT, WINDOW, SPRING_EVERY, HOLD, UNDERPASS_MIN, UNDERPASS_MAX, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, CHASM,
+  idx, inMap, newState, pieceAt, gateOpen, passable, reachable, canPlace, place, canUnderpass, placeUnderpass, remove, rotate, attune, startRun, endRun,
   outDirs, feeders, mixerJammed, step, rateOf, satisfied, progress, serialize, deserialize,
 };
