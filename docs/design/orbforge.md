@@ -49,7 +49,7 @@ There are no monsters and no failure. The fun is in the tiles: splitting, joinin
 | Mixer | Yes | One orb from each of two inputs → one merged orb out of its gold notch (1 fire/s + 1 water/s → 1 steam/s). A third input, or anything feeding its notch, **jams** it (⚠). An unknown pair fizzles. |
 | Demerger | Yes | Takes a merged orb from behind and splits it: first part out the left, second out the right (steam → fire left, water right). |
 | Wellspring | Yes | On spring spots only, between runs only. 1 orb/s of the chosen element. |
-| Underpass (planned) | Yes | A belt tunnel that jumps 2–3 tiles, for crossing another line or a wall. |
+| Underpass | Yes | A tunnel placed as a pair: tap the entrance, then the exit 2–4 tiles straight ahead. Orbs pass under whatever is between (belts, pieces, goals), so lines can cross. It never passes under rock, chasms, doors or gates, so it can't skip a goal or a held gate. It holds one orb per tile of its length. Picking up either end removes both. |
 
 Rate maths the puzzles are built on:
 - a Splitter halves a stream
@@ -70,6 +70,7 @@ Rate maths the puzzles are built on:
 
 - **Every goal gives a reward:** pieces, a wellspring or an element.
 - **Held gates are a standing tax.** Everything beyond one needs it kept fed, which uses up part of your flow. Late puzzles must keep earlier gates fed while solving the new one, so the network grows without any single region being big.
+- **Opened doors are ordinary floor:** belts and pieces can go on them.
 - **Pieces stuck behind a closed gate** can still be picked up from anywhere, so nothing is ever stranded.
 
 ## Puzzle ingredients (each region is small, about 5×5 to 7×7)
@@ -95,7 +96,7 @@ One continuous map, 25×27 tiles, with nine goals. It starts with one fire wells
 | B | Twin Braziers | Door: two braziers, fire 0.5/s each | Splitter | Water, a second wellspring |
 | H | Shrine of Embers (optional) | Shrine: fire 1.5/s | Two fire wellsprings | Splitter |
 | C | The Sluice | **Held gate**: water 0.5/s | A fire + water run | Mixer |
-| D | The Steam Door | Door: steam 0.5/s, beyond the sluice | Splitting water between sluice and Mixer | Demerger |
+| D | The Steam Door | Door: steam 0.5/s, beyond the sluice | Splitting water between sluice and Mixer | Demerger, Underpass |
 | E | The Narrow | Door: fire 0.5 + water 0.5 past a one-tile gap | Mixer → gap → Demerger | Joiner |
 | F | The Rune Lock | Rune: fire, water alternating at 1/s | Demerger → Joiner | Earth, a third wellspring, a second Mixer |
 | G | The Chasm | Bridge: 30 earth | A run with earth | Splitter |
@@ -112,7 +113,7 @@ Every region's intended solution is built and checked by `prototypes/springs-puz
 - **Rewards:**
   - more wellsprings (more parallel streams)
   - new elements (more combinations)
-  - new piece types (Demerger, Underpass)
+  - more of each piece type
   - recipe tablets for tertiaries
 - **Order:**
   1. Early regions teach one piece each.
@@ -136,6 +137,5 @@ Every region's intended solution is built and checked by `prototypes/springs-puz
 
 ## Open questions
 
-- Should the Underpass be in the core set, or stay a rare reward?
 - Should the rate window (8 s) and the hold (4 s) be shown as a visible "filling" meter on each goal?
 - Should held gates show their tax on the overview map so the network's load is readable?
