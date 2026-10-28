@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Valley Visual Designs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<style>
+  /* Full-screen 3D preview of the puzzle level, with style and view switches. Reference art only: the game itself is Godot. */
+  :root {
+    --bg: #15131c; --panel: rgba(28,25,38,.92); --line: #3a3549; --fg: #ece6d6; --muted: #a59fb3; --gold: #e0b55c;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif; --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--body); overscroll-behavior: none; }
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #view { position: relative; flex: 1; min-height: 0; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px max(10px, env(safe-area-inset-left, 0px)); background: var(--bg); }
+  .bar.top { padding-top: max(8px, env(safe-area-inset-top, 0px)); }
+  .bar.bottom { padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); }
+  h1 { font: 700 16px/1.2 var(--display); margin: 0 6px 0 0; letter-spacing: .04em; }
+  .btn { font: 600 12px var(--body); color: var(--fg); background: #2b2738; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; min-height: 32px; }
+  .btn.on { border-color: var(--gold); color: var(--gold); background: #3a2f18; }
+  .caption { position: absolute; left: 8px; right: 8px; bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  .caption b { color: var(--fg); font-family: var(--display); font-size: 13px; letter-spacing: .03em; }
+  .grow { flex: 1; }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="bar top"><h1>Valley Designs</h1><span class="grow"></span><span id="styles"></span></div>
+  <div id="view"><div class="loading" id="loading">Building the valley…</div><div class="caption" id="caption"></div></div>
+  <div class="bar bottom" id="views"></div>
+</div>
+<script>
+/*LOGIC*/
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+/*VIEW*/
+</script>
+</body>
+</html>

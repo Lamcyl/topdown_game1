@@ -23,52 +23,66 @@ const PIECES = {
   joiner: { name: 'Joiner', icon: '⑃', info: 'Takes from behind and both sides, alternating between them, and sends forward. Makes sequences.' },
   mixer: { name: 'Mixer', icon: '⚗️', info: 'Takes one orb from each of two inputs and sends one merged orb out of the gold notch (fire + water → steam). A third input jams it.' },
   demerger: { name: 'Demerger', icon: '⚖', info: 'Takes a merged orb from behind and splits it: first part out the left, second out the right (steam → fire left, water right).' },
-  underpass: { name: 'Underpass', icon: '🕳️', pair: true, info: 'A tunnel: tap the entrance, then the exit 2–4 tiles straight ahead. Orbs go under whatever is between (belts, pieces, goals) but never under rock, chasms, doors or gates.' },
+  underpass: { name: 'Underpass', icon: '🕳️', pair: true, info: 'A tunnel: tap the entrance, then the exit 2–4 tiles straight ahead. Orbs go under whatever is between (belts, pieces, goals) but never under trees, the river, doors or gates.' },
   wellspring: { name: 'Wellspring', icon: '⛲', info: 'Goes on a spring spot by the start. Emits 1 orb a second of the element you chose for this run.' },
 };
 const PIECE_ORDER = ['belt', 'splitter', 'joiner', 'mixer', 'demerger', 'underpass', 'wellspring'];
 const UNDERPASS_MIN = 2, UNDERPASS_MAX = 4; // exit distance from the entrance, in tiles
 
 // ---------------------------------------------------------------- the level
-// Tiles: '#' rock, '.' floor, 'S' spring spot, '~' chasm, 'B' barrier (owned by an objective).
-const W = 25, H = 27, START = [12, 23];
+// Tiles: '#' trees, '.' meadow, 'S' spring spot, '~' river, 'B' barrier (owned by an objective).
+// The valley is open meadow; woods divide it into small clearings, and clumps of trees stand inside them.
+const W = 27, H = 34, START = [13, 29];
 function carve() {
   const g = Array.from({ length: H }, () => Array(W).fill('#'));
-  const room = (x0, y0, x1, y1, ch = '.') => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch; };
-  room(9, 21, 15, 25);            // A: the Spring Grounds (start)
-  for (const x of [10, 12, 14]) g[25][x] = 'S';
-  room(9, 14, 15, 19);            // B: Twin Braziers
-  room(16, 16, 16, 17); room(17, 15, 21, 18); // H: side shrine, open from B
-  room(9, 8, 15, 12);             // C: the Sluice
-  room(16, 9, 16, 11);            // open passage C → G
-  room(2, 8, 7, 12);              // D: Steam Door
-  room(1, 1, 3, 6); room(5, 1, 7, 6); room(4, 4, 4, 4); // E: the Narrow (one-tile gap at 4,4)
-  room(9, 1, 15, 6);              // F: Rune Lock
-  room(17, 8, 23, 12); room(19, 8, 20, 12, '~'); // G: the Chasm
-  room(21, 7, 23, 7);             // open passage G (far side) → I
-  room(17, 1, 23, 6);             // I: the Scales
+  const clear = (x0, y0, x1, y1, ch = '.') => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch; };
+  const trees = (...xy) => { for (const [x, y] of xy) g[y][x] = '#'; };
+  clear(9, 26, 17, 32);               // A: Spring Meadow (start)
+  for (const x of [11, 13, 15]) g[32][x] = 'S';
+  trees([16, 27], [17, 27], [17, 28], [9, 29], [9, 30]);
+  clear(9, 18, 17, 24);               // B: Ember Glade
+  trees([10, 21], [10, 22], [11, 22], [16, 23], [17, 23], [17, 22]);
+  clear(18, 20, 18, 21); clear(19, 18, 24, 23); // H: shrine clearing, open from B
+  trees([19, 18], [20, 18], [20, 23], [21, 23]);
+  clear(9, 11, 17, 16);               // C: Mill Pond
+  trees([16, 15], [17, 15], [17, 16], [9, 16], [10, 16]);
+  clear(18, 12, 18, 14);              // open track C → G
+  clear(1, 11, 7, 16);                // D: Forge Yard
+  trees([6, 11], [7, 11], [5, 16], [6, 16], [7, 16]);
+  clear(1, 8, 7, 9);                  // the hollow below the oaks
+  trees([1, 8], [6, 9], [7, 9]);
+  clear(3, 7, 3, 7);                  // E: the one gap between the great oaks
+  clear(1, 1, 6, 6);                  // E: the Oak Narrows
+  trees([6, 2], [6, 4], [6, 5], [6, 6], [1, 5], [1, 6], [5, 6]);
+  clear(8, 1, 16, 6);                 // F: Standing Stones
+  trees([10, 4], [11, 4], [14, 3], [15, 5], [9, 6]);
+  clear(19, 11, 25, 16); clear(21, 11, 22, 16, '~'); // G: the River
+  trees([19, 16], [20, 16], [24, 16], [25, 16], [23, 15]);
+  clear(23, 10, 25, 10);              // track from the far bank to the castle
+  clear(18, 1, 25, 9);                // I: Castle Green
+  trees([20, 8], [21, 8], [18, 9], [19, 9], [21, 1], [22, 1]);
   return g;
 }
 // Objectives. kind: door (rate, opens forever) · held (rate, open only while fed) · bridge (total, built forever)
 // · rune (alternating sequence at a rate, opens forever) · scales (two equal rates, opens forever) · shrine (rate, reward only)
 const OBJECTIVES = [
-  { id: 'A', name: 'The First Door', kind: 'door', receptors: [{ x: 9, y: 21, el: 'fire', rate: 1 }], barrier: [[11, 20], [12, 20], [13, 20]],
+  { id: 'A', name: 'The Village Gate', kind: 'door', receptors: [{ x: 9, y: 26, el: 'fire', rate: 1 }], barrier: [[12, 25], [13, 25], [14, 25]],
     reward: { splitter: 1 }, hint: 'Belt your fire wellspring into the brazier at 1 orb a second.' },
-  { id: 'B', name: 'Twin Braziers', kind: 'door', receptors: [{ x: 9, y: 14, el: 'fire', rate: 0.5 }, { x: 15, y: 14, el: 'fire', rate: 0.5 }], barrier: [[11, 13], [12, 13], [13, 13]],
+  { id: 'B', name: 'Twin Braziers', kind: 'door', receptors: [{ x: 9, y: 18, el: 'fire', rate: 0.5 }, { x: 17, y: 18, el: 'fire', rate: 0.5 }], barrier: [[12, 17], [13, 17], [14, 17]],
     reward: { water: true, wellspring: 1 }, hint: 'Each brazier needs half a fire a second. One stream, two braziers…' },
-  { id: 'H', name: 'Shrine of Embers', kind: 'shrine', optional: true, receptors: [{ x: 21, y: 15, el: 'fire', rate: 1.5 }],
+  { id: 'H', name: 'Shrine of Embers', kind: 'shrine', optional: true, receptors: [{ x: 24, y: 18, el: 'fire', rate: 1.5 }],
     reward: { splitter: 1 }, hint: 'More fire than one wellspring can give.' },
-  { id: 'C', name: 'The Sluice', kind: 'held', receptors: [{ x: 15, y: 8, el: 'water', rate: 0.5 }], barrier: [[8, 9], [8, 10], [8, 11]],
-    reward: { mixer: 1 }, hint: 'The sluice stays up only while water keeps flowing in. Everything west passes under it.' },
-  { id: 'D', name: 'The Steam Door', kind: 'door', receptors: [{ x: 2, y: 12, el: 'steam', rate: 0.5 }], barrier: [[2, 7], [3, 7]],
-    reward: { demerger: 1, underpass: 1 }, hint: 'Steam is fire and water mixed. Keep the sluice fed too.' },
-  { id: 'E', name: 'The Narrow', kind: 'door', receptors: [{ x: 7, y: 1, el: 'fire', rate: 0.5 }, { x: 7, y: 6, el: 'water', rate: 0.5 }], barrier: [[8, 2], [8, 3], [8, 4]],
-    reward: { joiner: 1 }, hint: 'Only one lane fits through the gap. What goes in merged can come out apart.' },
-  { id: 'F', name: 'The Rune Lock', kind: 'rune', pattern: ['fire', 'water'], receptors: [{ x: 15, y: 1, els: ['fire', 'water'], rate: 1 }],
+  { id: 'C', name: 'The Mill Sluice', kind: 'held', receptors: [{ x: 17, y: 11, el: 'water', rate: 0.5 }], barrier: [[8, 12], [8, 13], [8, 14]],
+    reward: { mixer: 1 }, hint: 'The mill wheel lifts the portcullis only while water keeps turning it. Everything west passes under it.' },
+  { id: 'D', name: 'The Forge Door', kind: 'door', receptors: [{ x: 1, y: 16, el: 'steam', rate: 0.5 }], barrier: [[2, 10], [3, 10], [4, 10]],
+    reward: { demerger: 1, underpass: 1 }, hint: 'The forge wants steam: fire and water mixed. Keep the sluice turning too.' },
+  { id: 'E', name: 'The Oak Narrows', kind: 'door', receptors: [{ x: 1, y: 1, el: 'water', rate: 0.5 }, { x: 6, y: 3, el: 'fire', rate: 0.5 }], barrier: [[7, 1]],
+    reward: { joiner: 1 }, hint: 'One lane fits between the oaks. Beyond them fire and water come out on the wrong sides: one must pass under the other.' },
+  { id: 'F', name: 'The Standing Stones', kind: 'rune', pattern: ['fire', 'water'], receptors: [{ x: 16, y: 1, els: ['fire', 'water'], rate: 1 }],
     reward: { earth: true, wellspring: 1, mixer: 1 }, hint: 'Fire, water, fire, water… one a second, never two the same in a row.' },
-  { id: 'G', name: 'The Chasm', kind: 'bridge', receptors: [{ x: 17, y: 8, el: 'earth', total: 30 }], barrier: [],
-    reward: { splitter: 1 }, hint: 'Pour 30 earth into the bridge-works to span the chasm.' },
-  { id: 'I', name: 'The Scales', kind: 'scales', receptors: [{ x: 17, y: 1, el: 'magma', rate: 0.5 }, { x: 23, y: 1, el: 'mud', rate: 0.5 }], barrier: [],
+  { id: 'G', name: 'The River', kind: 'bridge', receptors: [{ x: 19, y: 11, el: 'earth', total: 30 }], barrier: [],
+    reward: { splitter: 1 }, hint: 'Pour 30 earth into the bridge-works to span the river.' },
+  { id: 'I', name: 'The Castle Scales', kind: 'scales', receptors: [{ x: 18, y: 1, el: 'magma', rate: 0.5 }, { x: 25, y: 1, el: 'mud', rate: 0.5 }], barrier: [],
     reward: { end: true }, hint: 'Magma and mud, half a second each, perfectly balanced.' },
 ];
 const OBJ = Object.fromEntries(OBJECTIVES.map((o) => [o.id, o]));
@@ -82,8 +96,8 @@ for (const o of OBJECTIVES) {
   for (const [x, y] of o.barrier) { GRID[y][x] = 'B'; BARRIER.set(idx(x, y), o.id); }
   o.receptors.forEach((r, i) => { RECEPTOR.set(idx(r.x, r.y), [o.id, i]); if (!r.els) r.els = [r.el]; });
 }
-const CHASM = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (GRID[y][x] === '~') CHASM.push([x, y]);
-OBJ.G.barrier = CHASM; // the bridge turns the chasm into floor
+const RIVER = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (GRID[y][x] === "~") RIVER.push([x, y]);
+OBJ.G.barrier = RIVER; // the bridge turns the river into crossable planks
 
 // ---------------------------------------------------------------- state
 function newState() {
@@ -131,7 +145,7 @@ function markSeen(st, i) { // a reachable tile reveals its 8 neighbours too (wal
 function canPlace(st, type, x, y) {
   if (!inMap(x, y)) return 'Off the map.';
   const i = idx(x, y), reach = reachable(st)[i];
-  if (!reach) return GRID[y][x] === '#' ? 'Solid rock.' : 'You can’t reach there yet.';
+  if (!reach) return GRID[y][x] === '#' ? 'Trees grow here.' : 'You can’t reach there yet.';
   if (RECEPTOR.has(i)) return 'That’s an objective.';
   if (st.pieces[i]) return 'Something is already here.';
   if (type === 'wellspring') {
@@ -150,7 +164,7 @@ function canUnderpass(st, x1, y1, x2, y2) {
   if (dist < UNDERPASS_MIN || dist > UNDERPASS_MAX) return `The exit must be ${UNDERPASS_MIN}–${UNDERPASS_MAX} tiles from the entrance.`;
   for (let k = 1; k < dist; k++) {
     const x = x1 + dx * k, y = y1 + dy * k, t = GRID[y][x];
-    if (t === '#' || t === '~' || t === 'B') return 'Tunnels can’t pass under rock, chasms, doors or gates.';
+    if (t === '#' || t === '~' || t === 'B') return 'Tunnels can’t pass under trees, the river, doors or gates.';
   }
   return null;
 }
@@ -369,7 +383,7 @@ function deserialize(json) {
 }
 
 if (typeof module !== 'undefined') module.exports = {
-  BEAT, WINDOW, SPRING_EVERY, HOLD, UNDERPASS_MIN, UNDERPASS_MAX, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, CHASM,
+  BEAT, WINDOW, SPRING_EVERY, HOLD, UNDERPASS_MIN, UNDERPASS_MAX, DIRS, ARROWS, ORBS, RECIPES, PARTS, PIECES, PIECE_ORDER, W, H, START, GRID, OBJECTIVES, OBJ, BARRIER, RECEPTOR, RIVER,
   idx, inMap, newState, pieceAt, gateOpen, passable, reachable, canPlace, place, canUnderpass, placeUnderpass, remove, rotate, attune, startRun, endRun,
   outDirs, feeders, mixerJammed, step, rateOf, satisfied, progress, serialize, deserialize,
 };

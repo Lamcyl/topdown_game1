@@ -43,7 +43,7 @@ const tools = el('div', { class: 'tools' });
 app.append(bar1, bar2, mapbox, tools);
 const ctx = canvas.getContext('2d');
 
-const cam = { cx: 12.5, cy: 22, z: 0 };
+const cam = { cx: 13.5, cy: 28.5, z: 0 };
 let Wc = 360, Hc = 360, DPR = 1;
 function resize() {
   const r = canvas.getBoundingClientRect(); DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -187,18 +187,20 @@ function draw(now) {
 }
 function drawTile(x, y, z, now) {
   const t = GRID[y][x], X = sx(x), Y = sy(y), n = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-  if (t === '#') {
-    ctx.fillStyle = '#2a2633'; ctx.fillRect(X, Y, z + 0.5, z + 0.5);
-    if (y + 1 < H && GRID[y + 1][x] !== '#') { ctx.fillStyle = '#3a3546'; ctx.fillRect(X, Y + z * 0.7, z + 0.5, z * 0.3); }
+  if (t === '#') { // a tree on dark grass
+    ctx.fillStyle = '#3f5a36'; ctx.fillRect(X, Y, z + 0.5, z + 0.5);
+    circle(X + z * 0.55, Y + z * 0.6, z * 0.42, 'rgba(0,0,0,.25)');
+    circle(X + z / 2, Y + z * 0.45, z * (0.38 + Math.abs(n) * 0.08), Math.abs(n) > 0.5 ? '#5f8a4a' : '#6f9a52');
+    circle(X + z * 0.4, Y + z * 0.35, z * 0.14, 'rgba(255,255,220,.18)');
     return;
   }
-  const floor = () => { ctx.fillStyle = (x + y) % 2 ? '#8f8471' : '#968a76'; ctx.fillRect(X, Y, z + 0.5, z + 0.5); ctx.fillStyle = `rgba(0,0,0,${0.04 + Math.abs(n) * 0.05})`; ctx.fillRect(X + z * 0.06, Y + z * 0.06, z * 0.88, z * 0.88); };
+  const floor = () => { ctx.fillStyle = (x + y) % 2 ? '#8fae6a' : '#97b571'; ctx.fillRect(X, Y, z + 0.5, z + 0.5); ctx.fillStyle = `rgba(0,0,0,${0.03 + Math.abs(n) * 0.04})`; ctx.fillRect(X + z * 0.06, Y + z * 0.06, z * 0.88, z * 0.88); };
   if (t === '.' ) { floor(); return; }
   if (t === 'S') { floor(); circle(X + z / 2, Y + z / 2, z * 0.42, '#5d6f7a'); circle(X + z / 2, Y + z / 2, z * 0.34, '#2d4552'); ctx.strokeStyle = '#9fd6ef'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X + z / 2, Y + z / 2, z * 0.38, 0, Math.PI * 2); ctx.stroke(); return; }
   if (t === '~') {
     if (st.done.G) { ctx.fillStyle = '#6b4a2e'; ctx.fillRect(X, Y, z + 0.5, z + 0.5); ctx.strokeStyle = '#4a3220'; ctx.lineWidth = 1; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(X + k * z / 4, Y); ctx.lineTo(X + k * z / 4, Y + z); ctx.stroke(); } return; }
-    ctx.fillStyle = '#0d1424'; ctx.fillRect(X, Y, z + 0.5, z + 0.5);
-    ctx.strokeStyle = 'rgba(120,150,220,.18)'; ctx.lineWidth = 1; ctx.beginPath(); const o = (now / 900 + y * 0.3) % 1; ctx.moveTo(X, Y + z * o); ctx.lineTo(X + z, Y + z * o); ctx.stroke();
+    ctx.fillStyle = '#3f7fb0'; ctx.fillRect(X, Y, z + 0.5, z + 0.5);
+    ctx.strokeStyle = 'rgba(220,240,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); const o = (now / 900 + y * 0.3) % 1; ctx.moveTo(X, Y + z * o); ctx.lineTo(X + z, Y + z * o); ctx.stroke();
     return;
   }
   if (t === 'B') {
@@ -387,7 +389,7 @@ function objectiveCard(o, withHead = true) {
 function goalsSheet() {
   const card = el('div', {}, head('Goals', `${st.runs} run${st.runs === 1 ? '' : 's'}`));
   const visible = OBJECTIVES.filter((o) => o.receptors.some((r) => st.seen[idx(r.x, r.y)]));
-  if (!st.runs) card.append(el('p', {}, 'Your wellspring sits on a spring spot in the Spring Grounds. Lay belts from it to the brazier, then press ▶ Start run. Doors open when the flow holds its rate.'));
+  if (!st.runs) card.append(el('p', {}, 'Your wellspring sits on a spring spot in the Spring Meadow. Lay belts from it to the brazier, then press ▶ Start run. Doors open when the flow holds its rate.'));
   for (const o of visible) {
     const item = el('div', { class: 'item', style: 'grid-template-columns: 1fr' }, el('div', {}, el('b', {}, o.name), o.optional ? el('span', { class: 'tag' }, ' optional') : null), objectiveCard(o, false));
     item.addEventListener('click', () => { const r = o.receptors[0]; cam.cx = r.x + 0.5; cam.cy = r.y + 2; clampCam(); });
@@ -403,8 +405,8 @@ function tileSheet() {
   if (BARRIER.has(i) && !p) return objectiveCard(OBJ[BARRIER.get(i)]);
   if (!p) {
     const t = GRID[y][x];
-    const name = { '#': 'Rock', '.': 'Floor', S: 'Spring spot', '~': st.done.G ? 'Bridge' : 'Chasm' }[t];
-    const text = { '#': 'Nothing can be built here.', '.': reach[i] ? 'Pick a piece in the bar below, then tap here.' : 'Out of reach for now.', S: 'Wellsprings go here, between runs.', '~': st.done.G ? 'Built by the Chasm’s bridge-works.' : 'Too deep to build over. The bridge-works nearby can span it.' }[t];
+    const name = { '#': 'Trees', '.': 'Meadow', S: 'Spring spot', '~': st.done.G ? 'Bridge' : 'River' }[t];
+    const text = { '#': 'Nothing can be built here.', '.': reach[i] ? 'Pick a piece in the bar below, then tap here.' : 'Out of reach for now.', S: 'Wellsprings go here, between runs.', '~': st.done.G ? 'Built by the river’s bridge-works.' : 'Too deep to build over. The bridge-works nearby can span it.' }[t];
     return el('div', {}, head(name), el('p', { class: 'sub' }, text));
   }
   const P = PIECES[p.type], card = el('div', {}, head(p.type === 'wellspring' ? `${ORBS[p.el].name} Wellspring` : P.name));
@@ -467,7 +469,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 // First visit: put the starting wellspring on the middle spring spot, facing up.
-if (!Object.keys(st.pieces).length && !st.runs) { place(st, 'wellspring', 12, 25, 0, 'fire'); reach = reachable(st); say('Lay belts from your fire wellspring to the brazier, then ▶ Start run. 🎯 shows goals.', 9000); }
+if (!Object.keys(st.pieces).length && !st.runs) { place(st, 'wellspring', 13, 32, 0, 'fire'); reach = reachable(st); say('Lay belts from your fire wellspring to the brazier, then ▶ Start run. 🎯 shows goals.', 9000); }
 new ResizeObserver(() => resize()).observe(canvas);
 resize(); renderAll();
 requestAnimationFrame(frame);
