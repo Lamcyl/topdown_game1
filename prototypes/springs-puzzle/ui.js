@@ -15,7 +15,7 @@ const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStar
 const fmtRate = (v) => (Math.round(v * 100) / 100).toString();
 
 // ---------------------------------------------------------------- saved progress (layout and unlocks)
-const SAVE_KEY = 'orbforge-springs-v1';
+const SAVE_KEY = 'orbforge-springs-v2'; // v2: the medieval valley layout
 let st = newState();
 try { const raw = localStorage.getItem(SAVE_KEY); if (raw) st = deserialize(raw); } catch (e) { /* storage unavailable or old save */ }
 const persist = () => { try { localStorage.setItem(SAVE_KEY, serialize(st)); } catch (e) { /* storage unavailable */ } };
